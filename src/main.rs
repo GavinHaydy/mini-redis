@@ -12,10 +12,12 @@ fn main() {
         println!("Client connected: {:?}", stream.peer_addr());
 
         let mut buffer = [0; 1024];
-        let n = stream.read(&mut buffer).unwrap();
+        loop {
+            let n = stream.read(&mut buffer).unwrap();
 
-        let msg = String::from_utf8_lossy(&buffer[..n]);
+            let msg = String::from_utf8_lossy(&buffer[..n]);
 
-        println!("Client received: {}", msg);
+            println!("Client received: {}", msg);
+        }
     }
 }
