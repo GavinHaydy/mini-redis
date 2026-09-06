@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
+use std::thread;
 
 fn handle_client(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
@@ -33,7 +34,9 @@ fn main() {
 
                 println!("Client connected: {:?}", stream.peer_addr());
 
-                handle_client(stream);
+                thread::spawn(move || {
+                    handle_client(stream);
+                });
 
                 println!("Client disconnected");
             }
