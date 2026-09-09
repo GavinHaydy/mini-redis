@@ -6,8 +6,25 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-fn handle_client(mut stream: TcpStream, db: Arc<Mutex<HashMap<String, String>>>) {
+fn value_to_string(value: &resp::RespValue) -> Result<String, String> {
+    match value {
+        resp::RespValue::BulkString(data) => {
+            String::from_utf8(data.clone())
+                .map_err(|_| "invalid utf8".to_string())
+        }
+
+        resp::RespValue::Array(_) => {
+            Err("expected bulk string".to_string())
+        }
+    }
+}
+
+fn handle_client(
+    mut stream: TcpStream,
+    db: Arc<Mutex<HashMap<String, String>>>,
+) {
     let mut buffer = [0; 1024];
+    let mut input = Vec::new();
 
     loop {
         let n = match stream.read(&mut buffer) {
@@ -22,33 +39,74 @@ fn handle_client(mut stream: TcpStream, db: Arc<Mutex<HashMap<String, String>>>)
             break;
         }
 
-        let msg = String::from_utf8_lossy(&buffer[..n]);
-        let parts: Vec<&str> = msg.trim().split_whitespace().collect();
-        if parts.len() == 3 && parts[0] == "SET" {
-            let mut db = db.lock().unwrap();
-            db.insert(parts[1].to_string(), parts[2].to_string());
+        input.extend_from_slice(&buffer[..n]);
 
-            stream.write_all(b"+OK\r\n").unwrap();
-        } else if parts.len() == 2 && parts[0] == "GET" {
-            let value = {
-                let db = db.lock().unwrap();
-                db.get(parts[1]).cloned()
-            };
+        loop {
+            let result = resp::parse_array(&input);
 
-            match value {
-                Some(value) => {
-                    stream.write_all(value.as_bytes()).unwrap();
-                    stream.write_all(b"\r\n").unwrap();
-                },
-                None => {
-                    stream.write_all(b"$-1\r\n").unwrap();
-                },
+            match result {
+                Ok(Some((command, consumed))) => {
+                    input.drain(..consumed);
+
+                    let args: Result<Vec<String>, String> = command
+                        .iter()
+                        .map(value_to_string)
+                        .collect();
+
+                    let args = match args {
+                        Ok(args) => args,
+                        Err(e) => {
+                            println!("Command error: {}", e);
+                            continue;
+                        }
+                    };
+
+                    println!("Command: {:?}", args);
+
+                    if args.len() == 3 && args[0] == "SET" {
+                        {
+                            let mut db = db.lock().unwrap();
+
+                            db.insert(
+                                args[1].clone(),
+                                args[2].clone(),
+                            );
+                        }
+
+                        stream.write_all(b"+OK\r\n").unwrap();
+                    } else if args.len() == 2 && args[0] == "GET" {
+                        let value = {
+                            let db = db.lock().unwrap();
+
+                            db.get(&args[1]).cloned()
+                        };
+
+                        match value {
+                            Some(value) => {
+                                stream.write_all(value.as_bytes()).unwrap();
+                                stream.write_all(b"\r\n").unwrap();
+                            }
+
+                            None => {
+                                stream.write_all(b"$-1\r\n").unwrap();
+                            }
+                        }
+                    }
+                }
+
+                Ok(None) => {
+                    break;
+                }
+
+                Err(e) => {
+                    println!("RESP error: {}", e);
+                    break;
+                }
             }
         }
-
-        println!("Received: {}", msg);
     }
 }
+
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
@@ -72,5 +130,4 @@ fn main() {
             }
         }
     }
-
 }
