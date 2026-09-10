@@ -8,12 +8,16 @@ use std::thread;
 
 fn value_to_string(value: &resp::RespValue) -> Result<String, String> {
     match value {
-        resp::RespValue::BulkString(data) => {
+        resp::RespValue::BulkString(Some(data)) => {
             String::from_utf8(data.clone())
                 .map_err(|_| "invalid utf8".to_string())
         }
 
-        resp::RespValue::Array(_) => {
+        resp::RespValue::BulkString(None) => {
+            Err("nil bulk string is not valid command argument".to_string())
+        }
+
+        _ => {
             Err("expected bulk string".to_string())
         }
     }
@@ -73,7 +77,13 @@ fn handle_client(
                             );
                         }
 
-                        stream.write_all(b"+OK\r\n").unwrap();
+                        let response = resp::RespValue::SimpleString(
+                            "OK".to_string()
+                        );
+
+                        let output = resp::encode(&response);
+
+                        stream.write_all(&output).unwrap();
                     } else if args.len() == 2 && args[0] == "GET" {
                         let value = {
                             let db = db.lock().unwrap();
@@ -83,12 +93,21 @@ fn handle_client(
 
                         match value {
                             Some(value) => {
-                                stream.write_all(value.as_bytes()).unwrap();
-                                stream.write_all(b"\r\n").unwrap();
+                                let response = resp::RespValue::BulkString(
+                                    Some(value.into_bytes())
+                                );
+
+                                let output = resp::encode(&response);
+
+                                stream.write_all(&output).unwrap();
                             }
 
                             None => {
-                                stream.write_all(b"$-1\r\n").unwrap();
+                                let response = resp::RespValue::BulkString(None);
+
+                                let output = resp::encode(&response);
+
+                                stream.write_all(&output).unwrap();
                             }
                         }
                     }

@@ -1,7 +1,58 @@
 #[derive(Debug)]
 pub enum RespValue {
-    BulkString(Vec<u8>),
+    SimpleString(String),
+    Error(String),
+    BulkString(Option<Vec<u8>>),
+    Integer(i64),
     Array(Vec<RespValue>),
+}
+
+pub fn encode(value: &RespValue) -> Vec<u8> {
+    let mut output = Vec::new();
+
+    match value {
+        RespValue::SimpleString(value) => {
+            output.extend_from_slice(b"+");
+            output.extend_from_slice(value.as_bytes());
+            output.extend_from_slice(b"\r\n");
+        }
+
+        RespValue::Error(value) => {
+            output.extend_from_slice(b"-");
+            output.extend_from_slice(value.as_bytes());
+            output.extend_from_slice(b"\r\n");
+        }
+
+        RespValue::Integer(value) => {
+            output.extend_from_slice(b":");
+            output.extend_from_slice(value.to_string().as_bytes());
+            output.extend_from_slice(b"\r\n");
+        }
+
+        RespValue::BulkString(Some(value)) => {
+            output.extend_from_slice(b"$");
+            output.extend_from_slice(value.len().to_string().as_bytes());
+            output.extend_from_slice(b"\r\n");
+            output.extend_from_slice(value);
+            output.extend_from_slice(b"\r\n");
+        }
+
+        RespValue::BulkString(None) => {
+            output.extend_from_slice(b"$-1\r\n");
+        }
+
+        RespValue::Array(values) => {
+            output.extend_from_slice(b"*");
+            output.extend_from_slice(values.len().to_string().as_bytes());
+            output.extend_from_slice(b"\r\n");
+
+            for value in values {
+                output.extend_from_slice(&encode(value));
+            }
+        }
+    }
+
+    output
 }
 
 pub fn parse_bulk_string(input: &[u8]) -> Result<Option<(Vec<u8>, usize)>, String> {
@@ -66,7 +117,7 @@ pub fn parse_array(
             return Ok(None);
         };
 
-        values.push(RespValue::BulkString(value));
+        values.push(RespValue::BulkString(Some(value)));
 
         offset += consumed;
     }
