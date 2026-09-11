@@ -1,4 +1,5 @@
 mod resp;
+mod command;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -32,94 +33,45 @@ fn handle_client(
 
     loop {
         let n = match stream.read(&mut buffer) {
+            Ok(0) => break,
             Ok(n) => n,
             Err(e) => {
-                println!("Read error: {}", e);
+                println!("read error: {}", e);
                 break;
             }
         };
 
-        if n == 0 {
-            break;
-        }
-
         input.extend_from_slice(&buffer[..n]);
 
         loop {
-            let result = resp::parse_array(&input);
-
-            match result {
+            match resp::parse_array(&input) {
                 Ok(Some((command, consumed))) => {
                     input.drain(..consumed);
 
-                    let args: Result<Vec<String>, String> = command
-                        .iter()
-                        .map(value_to_string)
-                        .collect();
-
-                    let args = match args {
-                        Ok(args) => args,
-                        Err(e) => {
-                            println!("Command error: {}", e);
-                            continue;
-                        }
+                    let response = {
+                        let mut db = db.lock().unwrap();
+                        command::execute(command, &mut db)
                     };
 
-                    println!("Command: {:?}", args);
+                    let output = resp::encode(&response);
 
-                    if args.len() == 3 && args[0] == "SET" {
-                        {
-                            let mut db = db.lock().unwrap();
-
-                            db.insert(
-                                args[1].clone(),
-                                args[2].clone(),
-                            );
-                        }
-
-                        let response = resp::RespValue::SimpleString(
-                            "OK".to_string()
-                        );
-
-                        let output = resp::encode(&response);
-
-                        stream.write_all(&output).unwrap();
-                    } else if args.len() == 2 && args[0] == "GET" {
-                        let value = {
-                            let db = db.lock().unwrap();
-
-                            db.get(&args[1]).cloned()
-                        };
-
-                        match value {
-                            Some(value) => {
-                                let response = resp::RespValue::BulkString(
-                                    Some(value.into_bytes())
-                                );
-
-                                let output = resp::encode(&response);
-
-                                stream.write_all(&output).unwrap();
-                            }
-
-                            None => {
-                                let response = resp::RespValue::BulkString(None);
-
-                                let output = resp::encode(&response);
-
-                                stream.write_all(&output).unwrap();
-                            }
-                        }
+                    if let Err(e) = stream.write_all(&output) {
+                        println!("write error: {}", e);
+                        return;
                     }
                 }
 
-                Ok(None) => {
-                    break;
-                }
+                Ok(None) => break,
 
                 Err(e) => {
-                    println!("RESP error: {}", e);
-                    break;
+                    let response =
+                        resp::RespValue::Error(e);
+
+                    let output = resp::encode(&response);
+
+                    let _ = stream.write_all(&output);
+
+                    return;
                 }
             }
         }
