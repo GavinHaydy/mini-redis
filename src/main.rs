@@ -7,22 +7,6 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-fn value_to_string(value: &resp::RespValue) -> Result<String, String> {
-    match value {
-        resp::RespValue::BulkString(Some(data)) => {
-            String::from_utf8(data.clone())
-                .map_err(|_| "invalid utf8".to_string())
-        }
-
-        resp::RespValue::BulkString(None) => {
-            Err("nil bulk string is not valid command argument".to_string())
-        }
-
-        _ => {
-            Err("expected bulk string".to_string())
-        }
-    }
-}
 
 fn handle_client(
     mut stream: TcpStream,
@@ -50,7 +34,11 @@ fn handle_client(
 
                     let response = {
                         let mut db = db.lock().unwrap();
-                        command::execute(command, &mut db)
+
+                        match command::Command::parse(command) {
+                            Ok(command) => command::execute(command, &mut db),
+                            Err(error) => resp::RespValue::Error(error)
+                        }
                     };
 
                     let output = resp::encode(&response);

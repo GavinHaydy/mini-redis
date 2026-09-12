@@ -92,6 +92,10 @@ pub fn parse_bulk_string(input: &[u8]) -> Result<Option<(Vec<u8>, usize)>, Strin
 pub fn parse_array(
     input: &[u8],
 ) -> Result<Option<(Vec<RespValue>, usize)>, String> {
+    if input.is_empty() {
+        return Ok(None);
+    }
+
     if !input.starts_with(b"*") {
         return Err("not an array".to_string());
     }
