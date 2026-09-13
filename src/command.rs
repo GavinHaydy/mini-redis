@@ -2,8 +2,8 @@ use crate::resp::RespValue;
 use std::collections::HashMap;
 
 pub enum Command {
-    Set { key: String, value: String },
-    Get { key: String },
+    Set(String, String),
+    Get(String),
     Ping,
 }
 
@@ -42,7 +42,7 @@ impl Command {
 
                 let key = value_to_string(&values[1])?;
 
-                Ok(Command::Get { key })
+                Ok(Command::Get(key))
             }
 
             "SET" => {
@@ -56,38 +56,56 @@ impl Command {
                 let key = value_to_string(&values[1])?;
                 let value = value_to_string(&values[2])?;
 
-                Ok(Command::Set { key, value })
+                Ok(Command::Set(key, value))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
-}
-
-pub fn execute(
-    command: Command,
-    db: &mut HashMap<String, String>,
-) -> RespValue {
-    match command {
-        Command::Ping => RespValue::SimpleString(String::from("PONG")),
-        Command::Set { key, value } => {
-            db.insert(key, value);
-            RespValue::SimpleString("OK".to_string())
-        }
-        Command::Get { key } => {
-            match db.get(&key) {
-                Some(val) => {
-                    RespValue::BulkString(
-                        Some(val.as_bytes().to_vec())
-                    )
-                }
-                None => {
-                    RespValue::BulkString(None)
+    pub fn execute(
+        self,
+        db: &mut HashMap<String, String>,
+    ) -> RespValue{
+        match self {
+            Command::Ping => RespValue::SimpleString("PONG".to_string()),
+            Command::Set(key, value) => {
+                db.insert(key, value);
+                RespValue::SimpleString("OK".to_string())
+            }
+            Command::Get(key) => {
+                match db.get(&key) {
+                    Some(val) => RespValue::BulkString(Some(val.as_bytes().to_vec())),
+                    None => RespValue::BulkString(None),
                 }
             }
         }
     }
 }
+
+// pub fn execute(
+//     command: Command,
+//     db: &mut HashMap<String, String>,
+// ) -> RespValue {
+//     match command {
+//         Command::Ping => RespValue::SimpleString(String::from("PONG")),
+//         Command::Set { key, value } => {
+//             db.insert(key, value);
+//             RespValue::SimpleString("OK".to_string())
+//         }
+//         Command::Get { key } => {
+//             match db.get(&key) {
+//                 Some(val) => {
+//                     RespValue::BulkString(
+//                         Some(val.as_bytes().to_vec())
+//                     )
+//                 }
+//                 None => {
+//                     RespValue::BulkString(None)
+//                 }
+//             }
+//         }
+//     }
+// }
 
 
 fn value_to_string(value: &RespValue) -> Result<String, String> {

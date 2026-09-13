@@ -32,13 +32,18 @@ fn handle_client(
                 Ok(Some((command, consumed))) => {
                     input.drain(..consumed);
 
+                    let command = match command::Command::parse(command) {
+                        Ok(command) => command,
+                        Err(error) => {
+                            let response = resp::RespValue::Error(error);
+                            let output = resp::encode(&response);
+                            let _ = stream.write_all(&output);
+                            continue;
+                        }
+                    };
                     let response = {
                         let mut db = db.lock().unwrap();
-
-                        match command::Command::parse(command) {
-                            Ok(command) => command::execute(command, &mut db),
-                            Err(error) => resp::RespValue::Error(error)
-                        }
+                        command.execute(&mut db)
                     };
 
                     let output = resp::encode(&response);
