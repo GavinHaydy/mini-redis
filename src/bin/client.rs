@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use mini_redis::resp;
 
 fn encode_command(args: &[&str]) -> Vec<u8> {
     let mut output = Vec::new();
@@ -34,5 +35,7 @@ fn main() {
         .read(&mut buffer)
         .expect("failed to read");
 
-    println!("{}", String::from_utf8_lossy(&buffer[..n]));
+    let response = resp::parse(&buffer[..n]);
+
+    println!("{:?}", response);
 }
