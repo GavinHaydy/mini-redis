@@ -1,6 +1,68 @@
+use mini_redis::resp;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use mini_redis::resp;
+
+struct Client {
+    stream: TcpStream,
+}
+
+impl Client {
+    fn connect(addr: &str) -> Self {
+        let stream = TcpStream::connect(addr).expect("failed to connect");
+
+        Self { stream }
+    }
+
+    fn send(&mut self, args: &[&str]) -> resp::RespValue {
+        let request = encode_command(args);
+
+        self.stream.write_all(&request).expect("failed to write");
+
+        let mut buffer = [0; 1024];
+        let mut input = Vec::new();
+
+        loop {
+            let n = self.stream.read(&mut buffer).expect("failed to read");
+
+            if n == 0 {
+                panic!("server closed connection");
+            }
+
+            input.extend_from_slice(&buffer[..n]);
+
+            match resp::parse(&input) {
+                Ok(Some((response, consumed))) => {
+                    input.drain(..consumed);
+                    return response;
+                }
+
+                Ok(None) => {
+                    continue;
+                }
+
+                Err(e) => {
+                    panic!("failed to parse response: {}", e);
+                }
+            }
+        }
+    }
+
+    fn set(&mut self, key: &str, value: &str) -> resp::RespValue {
+        self.send(&["SET", key, value])
+    }
+
+    fn get(&mut self, key: &str) -> resp::RespValue {
+        self.send(&["GET", key])
+    }
+
+    fn del(&mut self, key: &str) -> resp::RespValue {
+        self.send(&["DEL", key])
+    }
+
+    fn ping(&mut self) -> resp::RespValue {
+        self.send(&["PING"])
+    }
+}
 
 fn encode_command(args: &[&str]) -> Vec<u8> {
     let mut output = Vec::new();
@@ -8,34 +70,24 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
     output.extend_from_slice(format!("*{}\r\n", args.len()).as_bytes());
 
     for arg in args {
-        output.extend_from_slice(
-            format!("${}\r\n", arg.len()).as_bytes()
-        );
+        output.extend_from_slice(format!("${}\r\n", arg.len()).as_bytes());
 
         output.extend_from_slice(arg.as_bytes());
         output.extend_from_slice(b"\r\n");
-
     }
     output
 }
 
 fn main() {
-    let mut stream = TcpStream::connect("127.0.0.1:6379")
-        .expect("failed to connect");
+    let mut client = Client::connect("127.0.0.1:6379");
 
-    let request = encode_command(&["PING"]);
+    println!("{:?}", client.ping());
 
-    stream
-        .write_all(&request)
-        .expect("failed to write");
+    println!("{:?}", client.set("name", "Gavin"));
 
-    let mut buffer = [0; 1024];
+    println!("{:?}", client.get("name"));
 
-    let n = stream
-        .read(&mut buffer)
-        .expect("failed to read");
+    println!("{:?}", client.del("name"));
 
-    let response = resp::parse(&buffer[..n]);
-
-    println!("{:?}", response);
+    println!("{:?}", client.get("name"));
 }
