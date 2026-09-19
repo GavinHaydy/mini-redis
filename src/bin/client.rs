@@ -13,7 +13,7 @@ impl Client {
         Self { stream }
     }
 
-    fn send(&mut self, args: &[&str]) -> resp::RespValue {
+    fn send(&mut self, args: &[&str]) -> Result<resp::RespValue, String> {
         let request = encode_command(args);
 
         self.stream.write_all(&request).expect("failed to write");
@@ -33,7 +33,7 @@ impl Client {
             match resp::parse(&input) {
                 Ok(Some((response, consumed))) => {
                     input.drain(..consumed);
-                    return response;
+                    return Ok(response);
                 }
 
                 Ok(None) => {
@@ -47,20 +47,32 @@ impl Client {
         }
     }
 
-    fn set(&mut self, key: &str, value: &str) -> resp::RespValue {
+    fn set(&mut self, key: &str, value: &str) -> Result<resp::RespValue, String> {
         self.send(&["SET", key, value])
     }
 
-    fn get(&mut self, key: &str) -> resp::RespValue {
+    fn get(&mut self, key: &str) -> Result<resp::RespValue, String> {
         self.send(&["GET", key])
     }
 
-    fn del(&mut self, key: &str) -> resp::RespValue {
+    fn del(&mut self, key: &str) -> Result<resp::RespValue, String> {
         self.send(&["DEL", key])
     }
 
-    fn ping(&mut self) -> resp::RespValue {
-        self.send(&["PING"])
+    fn ping(&mut self) -> Result<String, String> {
+        let response = self.send(&["PING"])?;
+
+        match response {
+            resp::RespValue::SimpleString(value) => {
+                Ok(value)
+            }
+            resp::RespValue::Error(err) => {
+                Err(err)
+            },
+            _ => {
+                Err("unexpected response".to_string())
+            }
+        }
     }
 }
 
@@ -90,4 +102,8 @@ fn main() {
     println!("{:?}", client.del("name"));
 
     println!("{:?}", client.get("name"));
+    match client.ping() {
+        Ok(value) => println!("{}", value),
+        Err(error) => println!("error: {}", error),
+    }
 }
