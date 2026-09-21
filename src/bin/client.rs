@@ -5,13 +5,17 @@ use mini_redis::resp::RespValue;
 
 struct Client {
     stream: TcpStream,
+    input: Vec<u8>,
 }
 
 impl Client {
     fn connect(addr: &str) -> Self {
         let stream = TcpStream::connect(addr).expect("failed to connect");
 
-        Self { stream }
+        Self {
+            stream,
+            input: Vec::new(),
+        }
     }
 
     fn send(&mut self, args: &[&str]) -> Result<resp::RespValue, String> {
@@ -20,7 +24,7 @@ impl Client {
         self.stream.write_all(&request).expect("failed to write");
 
         let mut buffer = [0; 1024];
-        let mut input = Vec::new();
+        // let mut input = Vec::new();
 
         loop {
             let n = self.stream.read(&mut buffer).expect("failed to read");
@@ -29,11 +33,11 @@ impl Client {
                 panic!("server closed connection");
             }
 
-            input.extend_from_slice(&buffer[..n]);
+            self.input.extend_from_slice(&buffer[..n]);
 
-            match resp::parse(&input) {
+            match resp::parse(&self.input) {
                 Ok(Some((response, consumed))) => {
-                    input.drain(..consumed);
+                    self.input.drain(..consumed);
                     return Ok(response);
                 }
 
