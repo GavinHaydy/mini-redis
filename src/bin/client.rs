@@ -9,6 +9,16 @@ struct Client {
 }
 
 impl Client {
+    fn expect_simple_string(
+        response: resp::RespValue,
+    ) -> Result<String, String> {
+        match response {
+            resp::RespValue::SimpleString(s) => Ok(s),
+            resp::RespValue::Error(e) => Err(e),
+            _ => Err("unexpected response".to_string()),
+        }
+    }
+
     fn connect(addr: &str) -> Self {
         let stream = TcpStream::connect(addr).expect("failed to connect");
 
@@ -93,17 +103,7 @@ impl Client {
     fn ping(&mut self) -> Result<String, String> {
         let response = self.send(&["PING"])?;
 
-        match response {
-            resp::RespValue::SimpleString(value) => {
-                Ok(value)
-            }
-            resp::RespValue::Error(err) => {
-                Err(err)
-            },
-            _ => {
-                Err("unexpected response".to_string())
-            }
-        }
+        Self::expect_simple_string(response)
     }
 }
 
