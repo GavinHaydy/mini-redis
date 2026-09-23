@@ -1,3 +1,4 @@
+use std::time::{Duration, Instant};
 use crate::resp::RespValue;
 use crate::store::{Db, Entry};
 
@@ -6,6 +7,7 @@ pub enum Command {
     Get(String),
     Del(String),
     Ping,
+    Expire(String, u64),
 }
 
 impl Command {
@@ -59,6 +61,22 @@ impl Command {
                 Ok(Command::Del(key))
             }
 
+            "EXPIRE" => {
+                if values.len() != 3 {
+                    return Err(
+                        "Err wrong number of arguments for 'expire' command"
+                            .to_string(),
+                    );
+                }
+                let key = value_to_string(&values[1])?;
+
+                let seconds = value_to_string(&values[2])?
+                    .parse::<u64>()
+                    .map_err(|_| "ERR invalid expire time".to_string())?;
+
+                Ok(Command::Expire(key, seconds))
+            }
+
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
@@ -82,6 +100,19 @@ impl Command {
             Command::Del(key) => {
                 let deleted = db.remove(&key).is_some();
                 RespValue::Integer(if deleted { 1 } else { 0 })
+            }
+            Command::Expire(key, seconds) => {
+                match db.get_mut(&key) {
+                    Some(entry) => {
+                        entry.expires_at =
+                            Some(Instant::now() + Duration::from_secs(seconds));
+
+                        RespValue::Integer(1)
+                    }
+                    None => {
+                        RespValue::Integer(0)
+                    }
+                }
             }
         }
     }
