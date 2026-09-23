@@ -1,5 +1,5 @@
 use crate::resp::RespValue;
-use std::collections::HashMap;
+use crate::store::{Db, Entry};
 
 pub enum Command {
     Set(String, String),
@@ -62,15 +62,21 @@ impl Command {
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
-    pub fn execute(self, db: &mut HashMap<String, String>) -> RespValue {
+    pub fn execute(self, db: &mut Db) -> RespValue {
         match self {
             Command::Ping => RespValue::SimpleString("PONG".to_string()),
             Command::Set(key, value) => {
-                db.insert(key, value);
+                db.insert(
+                    key,
+                    Entry{
+                        value,
+                        expires_at: None
+                    }
+                );
                 RespValue::SimpleString("OK".to_string())
             }
             Command::Get(key) => match db.get(&key) {
-                Some(val) => RespValue::BulkString(Some(val.as_bytes().to_vec())),
+                Some(val) => RespValue::BulkString(Some(val.value.as_bytes().to_vec())),
                 None => RespValue::BulkString(None),
             },
             Command::Del(key) => {

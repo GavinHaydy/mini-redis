@@ -1,7 +1,7 @@
+mod store;
 mod resp;
 mod command;
 
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -10,7 +10,7 @@ use std::thread;
 
 fn handle_client(
     mut stream: TcpStream,
-    db: Arc<Mutex<HashMap<String, String>>>,
+    db: Arc<Mutex<store::Db>>,
 ) {
     let mut buffer = [0; 1024];
     let mut input = Vec::new();
@@ -74,7 +74,7 @@ fn handle_client(
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
-    let db = Arc::new(Mutex::new(HashMap::new()));
+    let db = Arc::new(Mutex::new(store::Db::new()));
     println!("Mini Redis listening on 127.0.0.1:6379");
 
     for stream in listener.incoming() {

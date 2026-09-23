@@ -1,6 +1,7 @@
 use mini_redis::resp;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::thread;
 use mini_redis::resp::RespValue;
 
 struct Client {
@@ -122,28 +123,48 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 }
 
 fn main() {
-    let mut client = Client::connect("127.0.0.1:6379");
+    let mut handles = Vec::new();
 
-    println!("{:?}", client.ping());
+    for i in 0..5 {
+        let handle = thread::spawn(move || {
+            let mut client = Client::connect("127.0.0.1:6379");
 
-    println!("{:?}", client.set("name", "Gavin"));
-    match client.set("name", "Gavin") {
-        Ok(()) => println!("set success"),
-        Err(error) => println!("set error: {}", error),
+            let key = format!("key{}", i);
+            let value = format!("value{}", i);
+
+            client.set(&key, &value).unwrap();
+
+            println!("{:?}", client.get(&key));
+        });
+
+        handles.push(handle);
     }
 
-    println!("{:?}", client.get("name"));
-    match client.get("name") {
-        Ok(Some(resp)) => println!("{:?}", resp),
-        Ok(None) => {}
-        Err(e) => println!("{:?}", e),
+    for handle in handles {
+        handle.join().unwrap();
     }
-
-    println!("{:?}", client.del("name"));
-
-    println!("{:?}", client.get("name"));
-    match client.ping() {
-        Ok(value) => println!("{}", value),
-        Err(error) => println!("error: {}", error),
-    }
+    // let mut client = Client::connect("127.0.0.1:6379");
+    //
+    // println!("{:?}", client.ping());
+    //
+    // println!("{:?}", client.set("name", "Gavin"));
+    // match client.set("name", "Gavin") {
+    //     Ok(()) => println!("set success"),
+    //     Err(error) => println!("set error: {}", error),
+    // }
+    //
+    // println!("{:?}", client.get("name"));
+    // match client.get("name") {
+    //     Ok(Some(resp)) => println!("{:?}", resp),
+    //     Ok(None) => {}
+    //     Err(e) => println!("{:?}", e),
+    // }
+    //
+    // println!("{:?}", client.del("name"));
+    //
+    // println!("{:?}", client.get("name"));
+    // match client.ping() {
+    //     Ok(value) => println!("{}", value),
+    //     Err(error) => println!("error: {}", error),
+    // }
 }
