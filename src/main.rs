@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
-
+use crate::resp::RespValue;
 
 fn handle_client(
     mut stream: TcpStream,
@@ -35,15 +35,22 @@ fn handle_client(
                     let command = match command::Command::parse(command) {
                         Ok(command) => command,
                         Err(error) => {
-                            let response = resp::RespValue::Error(error);
+                            let response = RespValue::Error(error);
                             let output = resp::encode(&response);
                             let _ = stream.write_all(&output);
                             continue;
                         }
                     };
-                    let response = {
-                        let mut db = db.lock().unwrap();
-                        command.execute(&mut db)
+                    // let response = {
+                    //     let mut db = db.lock().unwrap();
+                    //     command.execute(&mut db)
+                    // };
+                    //
+                    // let output = resp::encode(&response);
+                    let mut db = db.lock().unwrap();
+                    let response = match command.execute(&mut db) {
+                        Ok(response) => response,
+                        Err(e) => RespValue::Error(e),
                     };
 
                     let output = resp::encode(&response);
@@ -58,7 +65,7 @@ fn handle_client(
 
                 Err(e) => {
                     let response =
-                        resp::RespValue::Error(e);
+                        RespValue::Error(e);
 
                     let output = resp::encode(&response);
 

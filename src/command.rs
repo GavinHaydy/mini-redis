@@ -8,6 +8,7 @@ pub enum Command {
     Del(String),
     Ping,
     Expire(String, u64),
+    Incr(String)
 }
 
 impl Command {
@@ -77,12 +78,25 @@ impl Command {
                 Ok(Command::Expire(key, seconds))
             }
 
+            "INCR" => {
+                if values.len() != 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'incr' command"
+                            .to_string(),
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::Incr(key))
+            }
+
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
-    pub fn execute(self, db: &mut Db) -> RespValue {
+    pub fn execute(self, db: &mut Db) -> Result<RespValue, String> {
         match self {
-            Command::Ping => RespValue::SimpleString("PONG".to_string()),
+            Command::Ping => Ok(RespValue::SimpleString("PONG".to_string())),
             Command::Set(key, value) => {
                 db.insert(
                     key,
@@ -91,18 +105,18 @@ impl Command {
                         expires_at: None
                     }
                 );
-                RespValue::SimpleString("OK".to_string())
+                Ok(RespValue::SimpleString("OK".to_string()))
             }
             Command::Get(key) => match db.get(&key) {
-                Some(val) => RespValue::BulkString(Some(val.value.as_bytes().to_vec())),
-                None => RespValue::BulkString(None),
+                Some(val) => Ok(RespValue::BulkString(Some(val.value.as_bytes().to_vec()))),
+                None => Ok(RespValue::BulkString(None)),
             },
             Command::Del(key) => {
                 let deleted = db.remove(&key).is_some();
-                RespValue::Integer(if deleted { 1 } else { 0 })
+                Ok(RespValue::Integer(if deleted { 1 } else { 0 }))
             }
             Command::Expire(key, seconds) => {
-                match db.get_mut(&key) {
+                Ok(match db.get_mut(&key) {
                     Some(entry) => {
                         entry.expires_at =
                             Some(Instant::now() + Duration::from_secs(seconds));
@@ -112,7 +126,29 @@ impl Command {
                     None => {
                         RespValue::Integer(0)
                     }
-                }
+                })
+            }
+
+            Command::Incr(key) => {
+                let entry = db
+                    .entry(key)
+                    .or_insert_with(|| Entry {
+                        value: "0".to_string(),
+                        expires_at: None
+                    });
+
+                let number = entry
+                    .value
+                    .parse::<i64>()
+                    .map_err(|_| {
+                        "ERR value is not an integer or out of range".to_string()
+                    })?;
+
+                let number = number + 1;
+
+                entry.value = number.to_string();
+
+                Ok(RespValue::Integer(number))
             }
         }
     }
