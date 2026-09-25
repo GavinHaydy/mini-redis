@@ -41,12 +41,7 @@ fn handle_client(
                             continue;
                         }
                     };
-                    // let response = {
-                    //     let mut db = db.lock().unwrap();
-                    //     command.execute(&mut db)
-                    // };
-                    //
-                    // let output = resp::encode(&response);
+
                     let mut db = db.lock().unwrap();
                     let response = match command.execute(&mut db) {
                         Ok(response) => response,
