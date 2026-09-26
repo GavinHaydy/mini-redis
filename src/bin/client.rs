@@ -106,6 +106,16 @@ impl Client {
 
         Self::expect_simple_string(response)
     }
+
+    fn incr(&mut self, key: &str) -> Result<i64, String> {
+        let response = self.send(&["INCR", key])?;
+
+        match response {
+            resp::RespValue::Integer(value) => Ok(value),
+            resp::RespValue::Error(e) => Err(e),
+            _ => Err("unexpected response".to_string()),
+        }
+    }
 }
 
 fn encode_command(args: &[&str]) -> Vec<u8> {
@@ -135,6 +145,10 @@ fn main() {
             client.set(&key, &value).unwrap();
 
             println!("{:?}", client.get(&key));
+            println!("SET: {:?}", client.set("count", "10"));
+            println!("INCR: {:?}", client.incr("count"));
+            println!("INCR: {:?}", client.incr("count"));
+            println!("GET: {:?}", client.get("count"));
         });
 
         handles.push(handle);
