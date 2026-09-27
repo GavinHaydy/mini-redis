@@ -1,7 +1,6 @@
 use mini_redis::resp;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::thread;
 use mini_redis::resp::RespValue;
 
 struct Client {
@@ -116,6 +115,34 @@ impl Client {
             _ => Err("unexpected response".to_string()),
         }
     }
+
+    fn set_ex(
+        &mut self,
+        key: &str,
+        value: &str,
+        seconds: u64,
+    ) -> Result<(), String> {
+        let seconds = seconds.to_string();
+
+        let response = self.send(&[
+            "SET",
+            key,
+            value,
+            "EX",
+            &seconds,
+        ])?;
+
+        match response {
+            RespValue::SimpleString(value) if value == "OK" =>
+                {
+                    Ok(())
+                }
+
+            RespValue::Error(e) => Err(e),
+
+            _ => Err("unexpected response".to_string()),
+        }
+    }
 }
 
 fn encode_command(args: &[&str]) -> Vec<u8> {
@@ -133,30 +160,30 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 }
 
 fn main() {
-    let mut handles = Vec::new();
-
-    for i in 0..5 {
-        let handle = thread::spawn(move || {
-            let mut client = Client::connect("127.0.0.1:6379");
-
-            let key = format!("key{}", i);
-            let value = format!("value{}", i);
-
-            client.set(&key, &value).unwrap();
-
-            println!("{:?}", client.get(&key));
-            println!("SET: {:?}", client.set("count", "10"));
-            println!("INCR: {:?}", client.incr("count"));
-            println!("INCR: {:?}", client.incr("count"));
-            println!("GET: {:?}", client.get("count"));
-        });
-
-        handles.push(handle);
-    }
-
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    // let mut handles = Vec::new();
+    //
+    // for i in 0..5 {
+    //     let handle = thread::spawn(move || {
+    //         let mut client = Client::connect("127.0.0.1:6379");
+    //
+    //         let key = format!("key{}", i);
+    //         let value = format!("value{}", i);
+    //
+    //         client.set(&key, &value).unwrap();
+    //
+    //         println!("{:?}", client.get(&key));
+    //         println!("SET: {:?}", client.set("count", "10"));
+    //         println!("INCR: {:?}", client.incr("count"));
+    //         println!("INCR: {:?}", client.incr("count"));
+    //         println!("GET: {:?}", client.get("count"));
+    //     });
+    //
+    //     handles.push(handle);
+    // }
+    //
+    // for handle in handles {
+    //     handle.join().unwrap();
+    // }
     // let mut client = Client::connect("127.0.0.1:6379");
     //
     // println!("{:?}", client.ping());
@@ -181,4 +208,25 @@ fn main() {
     //     Ok(value) => println!("{}", value),
     //     Err(error) => println!("error: {}", error),
     // }
+    let mut client = Client::connect("127.0.0.1:6379");
+    // let mut client = Client::connect("127.0.0.1:6379");
+
+    println!(
+        "SET EX: {:?}",
+        client.set_ex("name", "Gavin", 3)
+    );
+
+    println!(
+        "GET: {:?}",
+        client.get("name")
+    );
+
+    std::thread::sleep(
+        std::time::Duration::from_secs(4)
+    );
+
+    println!(
+        "GET after expire: {:?}",
+        client.get("name")
+    );
 }

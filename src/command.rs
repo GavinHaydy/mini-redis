@@ -3,7 +3,7 @@ use crate::resp::RespValue;
 use crate::store::{Db, Entry};
 
 pub enum Command {
-    Set(String, String),
+    Set(String, String, Option<u64>),
     Get(String),
     Del(String),
     Ping,
@@ -42,14 +42,30 @@ impl Command {
             }
 
             "SET" => {
-                if values.len() != 3 {
+                if values.len() != 3 && values.len() != 5 {
                     return Err("ERR wrong number of arguments for 'set' command".to_string());
                 }
 
                 let key = value_to_string(&values[1])?;
                 let value = value_to_string(&values[2])?;
 
-                Ok(Command::Set(key, value))
+                let expires_in = if values.len() == 5 {
+                    let option = value_to_string(&values[3])?;
+
+                    if option.to_uppercase() != "EX" {
+                        return Err(
+                            "ERR syntax err".to_string()
+                        );
+                    }
+
+                    let seconds = value_to_string(&values[4])?
+                        .parse::<u64>()
+                        .map_err(|_|{
+                            "ERR invalid expire time".to_string()
+                        })?;
+                    Some(seconds)
+                }else { None };
+                Ok(Command::Set(key, value, expires_in))
             }
 
             "DEL" => {
@@ -97,19 +113,43 @@ impl Command {
     pub fn execute(self, db: &mut Db) -> Result<RespValue, String> {
         match self {
             Command::Ping => Ok(RespValue::SimpleString("PONG".to_string())),
-            Command::Set(key, value) => {
+            Command::Set(key, value,expires_in) => {
+                let expires_at = expires_in.map(|seconds| {
+                   Instant::now() + Duration::from_secs(seconds)
+                });
                 db.insert(
                     key,
                     Entry{
                         value,
-                        expires_at: None
+                        expires_at
                     }
                 );
                 Ok(RespValue::SimpleString("OK".to_string()))
             }
-            Command::Get(key) => match db.get(&key) {
-                Some(val) => Ok(RespValue::BulkString(Some(val.value.as_bytes().to_vec()))),
-                None => Ok(RespValue::BulkString(None)),
+            Command::Get(key) => {
+                let expired = match db.get(&key) {
+                    Some(entry) => {
+                        match entry.expires_at {
+                            Some(expires_at) => Instant::now() >= expires_at,
+                            None => false,
+                        }
+                    }
+                    None => false,
+                };
+
+                if expired {
+                    db.remove(&key);
+                    Ok(RespValue::BulkString(None))
+                } else {
+                    Ok(match db.get(&key) {
+                        Some(entry) => {
+                            RespValue::BulkString(
+                                Some(entry.value.as_bytes().to_vec())
+                            )
+                        }
+                        None => RespValue::BulkString(None)
+                    })
+                }
             },
             Command::Del(key) => {
                 let deleted = db.remove(&key).is_some();
