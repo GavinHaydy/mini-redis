@@ -152,8 +152,24 @@ impl Command {
                 }
             },
             Command::Del(key) => {
-                let deleted = db.remove(&key).is_some();
-                Ok(RespValue::Integer(if deleted { 1 } else { 0 }))
+                let expired = match db.get(&key) {
+                    Some(entry) => {
+                        match entry.expires_at {
+                            Some(expires_at) => Instant::now() >= expires_at,
+                            None => false,
+                        }
+                    }
+                    None => false,
+                };
+
+                if expired {
+                    db.remove(&key);
+                    Ok(RespValue::Integer(0))
+                } else {
+                    let deleted = db.remove(&key).is_some();
+                    Ok(RespValue::Integer(if deleted { 1 } else { 0 }))
+                }
+
             }
             Command::Expire(key, seconds) => {
                 Ok(match db.get_mut(&key) {
@@ -170,6 +186,20 @@ impl Command {
             }
 
             Command::Incr(key) => {
+                let expired = match db.get(&key) {
+                    Some(entry) => {
+                        match entry.expires_at {
+                            Some(expires_at) => Instant::now() >= expires_at,
+                            None => false,
+                        }
+                    }
+                    None => false,
+                };
+
+                if expired {
+                    db.remove(&key);
+                }
+
                 let entry = db
                     .entry(key)
                     .or_insert_with(|| Entry {

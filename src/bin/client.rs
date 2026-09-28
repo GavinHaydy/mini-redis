@@ -209,24 +209,12 @@ fn main() {
     //     Err(error) => println!("error: {}", error),
     // }
     let mut client = Client::connect("127.0.0.1:6379");
-    // let mut client = Client::connect("127.0.0.1:6379");
 
-    println!(
-        "SET EX: {:?}",
-        client.set_ex("name", "Gavin", 3)
-    );
+    client.set_ex("counter", "10", 2).unwrap();
 
-    println!(
-        "GET: {:?}",
-        client.get("name")
-    );
+    println!("INCR: {:?}", client.incr("counter"));
+    std::thread::sleep(std::time::Duration::from_secs(3));
 
-    std::thread::sleep(
-        std::time::Duration::from_secs(4)
-    );
-
-    println!(
-        "GET after expire: {:?}",
-        client.get("name")
-    );
+    println!("INCR after expire: {:?}", client.incr("counter"));
+    println!("GET after expire: {:?}", client.get("counter"));
 }
