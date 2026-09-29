@@ -143,6 +143,16 @@ impl Client {
             _ => Err("unexpected response".to_string()),
         }
     }
+
+    fn ttl(&mut self, key: &str) -> Result<i64, String> {
+        let response = self.send(&["TTL", key])?;
+
+        match response {
+            RespValue::Integer(value) => Ok(value),
+            RespValue::Error(error) => Err(error),
+            _ => Err("unexpected response".to_string()),
+        }
+    }
 }
 
 fn encode_command(args: &[&str]) -> Vec<u8> {
@@ -160,61 +170,23 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 }
 
 fn main() {
-    // let mut handles = Vec::new();
-    //
-    // for i in 0..5 {
-    //     let handle = thread::spawn(move || {
-    //         let mut client = Client::connect("127.0.0.1:6379");
-    //
-    //         let key = format!("key{}", i);
-    //         let value = format!("value{}", i);
-    //
-    //         client.set(&key, &value).unwrap();
-    //
-    //         println!("{:?}", client.get(&key));
-    //         println!("SET: {:?}", client.set("count", "10"));
-    //         println!("INCR: {:?}", client.incr("count"));
-    //         println!("INCR: {:?}", client.incr("count"));
-    //         println!("GET: {:?}", client.get("count"));
-    //     });
-    //
-    //     handles.push(handle);
-    // }
-    //
-    // for handle in handles {
-    //     handle.join().unwrap();
-    // }
-    // let mut client = Client::connect("127.0.0.1:6379");
-    //
-    // println!("{:?}", client.ping());
-    //
-    // println!("{:?}", client.set("name", "Gavin"));
-    // match client.set("name", "Gavin") {
-    //     Ok(()) => println!("set success"),
-    //     Err(error) => println!("set error: {}", error),
-    // }
-    //
-    // println!("{:?}", client.get("name"));
-    // match client.get("name") {
-    //     Ok(Some(resp)) => println!("{:?}", resp),
-    //     Ok(None) => {}
-    //     Err(e) => println!("{:?}", e),
-    // }
-    //
-    // println!("{:?}", client.del("name"));
-    //
-    // println!("{:?}", client.get("name"));
-    // match client.ping() {
-    //     Ok(value) => println!("{}", value),
-    //     Err(error) => println!("error: {}", error),
-    // }
     let mut client = Client::connect("127.0.0.1:6379");
 
-    client.set_ex("counter", "10", 2).unwrap();
+    // 设置一个 5 秒后过期的键
+    client.set_ex("name", "Gavin", 5).unwrap();
 
-    println!("INCR: {:?}", client.incr("counter"));
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    println!("TTL: {:?}", client.ttl("name"));
 
-    println!("INCR after expire: {:?}", client.incr("counter"));
-    println!("GET after expire: {:?}", client.get("counter"));
+    // 等待 6 秒
+    std::thread::sleep(std::time::Duration::from_secs(6));
+
+    println!("TTL after expire: {:?}", client.ttl("name"));
+
+    // 设置一个没有过期时间的键
+    client.set("city", "Tokyo").unwrap();
+
+    println!("TTL without expire: {:?}", client.ttl("city"));
+
+    // 查询不存在的键
+    println!("TTL missing key: {:?}", client.ttl("missing"));
 }

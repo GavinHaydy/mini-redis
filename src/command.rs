@@ -8,7 +8,8 @@ pub enum Command {
     Del(String),
     Ping,
     Expire(String, u64),
-    Incr(String)
+    Incr(String),
+    Ttl(String)
 }
 
 impl Command {
@@ -105,6 +106,16 @@ impl Command {
                 let key = value_to_string(&values[1])?;
 
                 Ok(Command::Incr(key))
+            }
+
+            "TTL" => {
+                if values.len() != 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'ttl' command".to_string(),
+                    );
+                }
+                let key = value_to_string(&values[1])?;
+                Ok(Command::Ttl(key))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -219,6 +230,40 @@ impl Command {
                 entry.value = number.to_string();
 
                 Ok(RespValue::Integer(number))
+            }
+
+            Command::Ttl(key) => {
+                let expired = match db.get(&key) {
+                    Some(entry) => {
+                        match entry.expires_at {
+                            Some(expires_at) => Instant::now() >= expires_at,
+                            None => false,
+                        }
+                    }
+                    None => false,
+                };
+                if expired {
+                    db.remove(&key);
+                    return Ok(RespValue::Integer(-2));
+                }
+
+                match db.get(&key) {
+                    None => Ok(RespValue::Integer(-2)),
+
+                    Some(entry) => {
+                        match entry.expires_at {
+                            None => Ok(RespValue::Integer(-1)),
+
+                            Some(expires_at) => {
+                                let seconds = expires_at
+                                    .saturating_duration_since(Instant::now())
+                                    .as_secs() as i64;
+
+                                Ok(RespValue::Integer(seconds))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
