@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 use crate::resp::RespValue;
-use crate::store::{Db, Entry};
+use crate::store::{Db, Entry, Value};
 
 pub enum Command {
     Set(String, String, Option<u64>),
@@ -131,7 +131,7 @@ impl Command {
                 db.insert(
                     key,
                     Entry{
-                        value,
+                        value: Value::String(value),
                         expires_at
                     }
                 );
@@ -152,14 +152,19 @@ impl Command {
                     db.remove(&key);
                     Ok(RespValue::BulkString(None))
                 } else {
-                    Ok(match db.get(&key) {
-                        Some(entry) => {
-                            RespValue::BulkString(
-                                Some(entry.value.as_bytes().to_vec())
-                            )
-                        }
-                        None => RespValue::BulkString(None)
-                    })
+                    match db.get(&key) {
+                        Some(entry) => match &entry.value {
+                            Value::String(value) => {
+                                Ok(RespValue::BulkString(
+                                    Some(value.as_bytes().to_vec())
+                                ))
+                            }
+                            Value::List(_) => {
+                                Err("WrongType Operation against a key holding the wrong kind of value".to_string())
+                            }
+                        },
+                        None => Ok(RespValue::BulkString(None)),
+                    }
                 }
             },
             Command::Del(key) => {
@@ -214,20 +219,26 @@ impl Command {
                 let entry = db
                     .entry(key)
                     .or_insert_with(|| Entry {
-                        value: "0".to_string(),
+                        value: Value::String("0".to_string()),
                         expires_at: None
                     });
 
-                let number = entry
-                    .value
-                    .parse::<i64>()
-                    .map_err(|_| {
-                        "ERR value is not an integer or out of range".to_string()
-                    })?;
+                let number = match &entry.value {
+                    Value::String(value) => {
+                        value.parse::<i64>().map_err(|_| {
+                            "ERR value is not an integer or out of range".to_string()
+                        })?
+                    }
+                    Value::List(_) => {
+                        return Err(
+                            "WrongType Operation against a key holding the wrong kind of value".to_string()
+                        )
+                    }
+                };
 
                 let number = number + 1;
 
-                entry.value = number.to_string();
+                entry.value = Value::String(number.to_string());
 
                 Ok(RespValue::Integer(number))
             }
