@@ -172,21 +172,11 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
-    // 设置一个 5 秒后过期的键
-    client.set_ex("name", "Gavin", 5).unwrap();
-
+    println!("SET: {:?}", client.set_ex("name", "Gavin", 10));
     println!("TTL: {:?}", client.ttl("name"));
 
-    // 等待 6 秒
-    std::thread::sleep(std::time::Duration::from_secs(6));
+    std::thread::sleep(std::time::Duration::from_secs(11));
 
     println!("TTL after expire: {:?}", client.ttl("name"));
-
-    // 设置一个没有过期时间的键
-    client.set("city", "Tokyo").unwrap();
-
-    println!("TTL without expire: {:?}", client.ttl("city"));
-
-    // 查询不存在的键
-    println!("TTL missing key: {:?}", client.ttl("missing"));
+    println!("GET after expire: {:?}", client.get("name"));
 }

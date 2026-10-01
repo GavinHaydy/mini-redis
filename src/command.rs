@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 use crate::resp::RespValue;
-use crate::store::{Db, Entry, Value};
+use crate::store::{remove_expired, Db, Entry, Value};
 
 pub enum Command {
     Set(String, String, Option<u64>),
@@ -138,33 +138,20 @@ impl Command {
                 Ok(RespValue::SimpleString("OK".to_string()))
             }
             Command::Get(key) => {
-                let expired = match db.get(&key) {
-                    Some(entry) => {
-                        match entry.expires_at {
-                            Some(expires_at) => Instant::now() >= expires_at,
-                            None => false,
-                        }
-                    }
-                    None => false,
-                };
+                remove_expired(db, &key);
 
-                if expired {
-                    db.remove(&key);
-                    Ok(RespValue::BulkString(None))
-                } else {
-                    match db.get(&key) {
-                        Some(entry) => match &entry.value {
-                            Value::String(value) => {
-                                Ok(RespValue::BulkString(
-                                    Some(value.as_bytes().to_vec())
-                                ))
-                            }
-                            Value::List(_) => {
-                                Err("WrongType Operation against a key holding the wrong kind of value".to_string())
-                            }
-                        },
-                        None => Ok(RespValue::BulkString(None)),
-                    }
+                match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::String(value) => {
+                            Ok(RespValue::BulkString(
+                                Some(value.as_bytes().to_vec())
+                            ))
+                        }
+                        Value::List(_) => {
+                            Err("WrongType Operation against a key holding the wrong kind of value".to_string())
+                        }
+                    },
+                    None => Ok(RespValue::BulkString(None)),
                 }
             },
             Command::Del(key) => {
@@ -202,19 +189,7 @@ impl Command {
             }
 
             Command::Incr(key) => {
-                let expired = match db.get(&key) {
-                    Some(entry) => {
-                        match entry.expires_at {
-                            Some(expires_at) => Instant::now() >= expires_at,
-                            None => false,
-                        }
-                    }
-                    None => false,
-                };
-
-                if expired {
-                    db.remove(&key);
-                }
+                remove_expired(db, &key);
 
                 let entry = db
                     .entry(key)
@@ -244,19 +219,23 @@ impl Command {
             }
 
             Command::Ttl(key) => {
-                let expired = match db.get(&key) {
-                    Some(entry) => {
-                        match entry.expires_at {
-                            Some(expires_at) => Instant::now() >= expires_at,
-                            None => false,
+                if let Some(entry) = db.get(&key) {
+                    println!("Value: {:?}", entry.expires_at);
+
+                    match entry.expires_at {
+                        Some(expires_at) => {
+                            println!(
+                                "Remaining: {:?}",
+                                expires_at.saturating_duration_since(Instant::now())
+                            );
                         }
+                        None => println!("No expiration"),
                     }
-                    None => false,
-                };
-                if expired {
-                    db.remove(&key);
-                    return Ok(RespValue::Integer(-2));
+                } else {
+                    println!("Key does not exist");
                 }
+
+                remove_expired(db, &key);
 
                 match db.get(&key) {
                     None => Ok(RespValue::Integer(-2)),
