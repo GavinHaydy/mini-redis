@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use crate::resp::RespValue;
 use crate::store::{remove_expired, Db, Entry, Value};
@@ -9,7 +10,8 @@ pub enum Command {
     Ping,
     Expire(String, u64),
     Incr(String),
-    Ttl(String)
+    Ttl(String),
+    LPush(String, String),
 }
 
 impl Command {
@@ -116,6 +118,17 @@ impl Command {
                 }
                 let key = value_to_string(&values[1])?;
                 Ok(Command::Ttl(key))
+            }
+
+            "LPUSH" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'LPush' command".to_string(),
+                    );
+                }
+                let key = value_to_string(&values[1])?;
+                let value = value_to_string(&values[2])?;
+                Ok(Command::LPush(key, value))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -252,6 +265,28 @@ impl Command {
                                 Ok(RespValue::Integer(seconds))
                             }
                         }
+                    }
+                }
+            }
+
+            Command::LPush(key, value) => {
+                remove_expired(db, &key);
+
+                let entry = db.entry(key).or_insert_with(|| Entry {
+                    value: Value::List(VecDeque::new()),
+                    expires_at: None,
+                });
+
+                match &mut entry.value {
+                    Value::List(list) => {
+                        list.push_front(value);
+
+                        Ok(RespValue::Integer(list.len() as i64))
+                    }
+                    Value::String(_) => {
+                        Err(
+                            "WrongType Operation against a key holding the wrong kind of value ".to_string()
+                        )
                     }
                 }
             }

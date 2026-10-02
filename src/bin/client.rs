@@ -172,9 +172,7 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
-    client.set_ex("temp", "hello", 3).unwrap();
-
-    std::thread::sleep(std::time::Duration::from_secs(5));
-
-    println!("GET: {:?}", client.get("temp"));
+    println!("LPUSH: {:?}", client.send(&["LPUSH", "fruits", "apple"]));
+    println!("LPUSH: {:?}", client.send(&["LPUSH", "fruits", "banana"]));
+    println!("GET: {:?}", client.get("fruits"));
 }
