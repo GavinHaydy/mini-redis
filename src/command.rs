@@ -12,6 +12,7 @@ pub enum Command {
     Incr(String),
     Ttl(String),
     LPush(String, String),
+    RPush(String, String),
 }
 
 impl Command {
@@ -124,6 +125,17 @@ impl Command {
                 if values.len() != 3 {
                     return Err(
                         "ERR wrong number of arguments for 'LPush' command".to_string(),
+                    );
+                }
+                let key = value_to_string(&values[1])?;
+                let value = value_to_string(&values[2])?;
+                Ok(Command::LPush(key, value))
+            }
+
+            "RPUSH" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'RPush' command".to_string(),
                     );
                 }
                 let key = value_to_string(&values[1])?;
@@ -280,6 +292,28 @@ impl Command {
                 match &mut entry.value {
                     Value::List(list) => {
                         list.push_front(value);
+
+                        Ok(RespValue::Integer(list.len() as i64))
+                    }
+                    Value::String(_) => {
+                        Err(
+                            "WrongType Operation against a key holding the wrong kind of value ".to_string()
+                        )
+                    }
+                }
+            }
+
+            Command::RPush(key, value) => {
+                remove_expired(db, &key);
+
+                let entry = db.entry(key).or_insert_with(|| Entry {
+                    value: Value::List(VecDeque::new()),
+                    expires_at: None,
+                });
+
+                match &mut entry.value {
+                    Value::List(list) => {
+                        list.push_back(value);
 
                         Ok(RespValue::Integer(list.len() as i64))
                     }

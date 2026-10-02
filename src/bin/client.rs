@@ -174,5 +174,6 @@ fn main() {
 
     println!("LPUSH: {:?}", client.send(&["LPUSH", "fruits", "apple"]));
     println!("LPUSH: {:?}", client.send(&["LPUSH", "fruits", "banana"]));
-    println!("GET: {:?}", client.get("fruits"));
+
+    println!("RPUSH: {:?}", client.send(&["RPUSH", "fruits", "orange"]));
 }
