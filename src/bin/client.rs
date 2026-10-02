@@ -172,8 +172,15 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
-    println!("LPUSH: {:?}", client.send(&["LPUSH", "fruits", "apple"]));
-    println!("LPUSH: {:?}", client.send(&["LPUSH", "fruits", "banana"]));
+    println!("{:?}", client.send(&["LPUSH", "fruits", "apple"]));
+    println!("{:?}", client.send(&["RPUSH", "fruits", "banana"]));
+    println!("{:?}", client.send(&["RPUSH", "fruits", "orange"]));
 
-    println!("RPUSH: {:?}", client.send(&["RPUSH", "fruits", "orange"]));
+    println!("{:?}", client.send(&["LRANGE", "fruits", "0", "-1"]));
+
+    println!("{:?}", client.send(&["LPOP", "fruits"]));
+
+    println!("{:?}", client.send(&["RPOP", "fruits"]));
+
+    println!("{:?}", client.send(&["LRANGE", "fruits", "0", "-1"]));
 }

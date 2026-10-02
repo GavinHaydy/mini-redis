@@ -1,7 +1,7 @@
+use crate::resp::RespValue;
+use crate::store::{Db, Entry, Value, remove_expired};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
-use crate::resp::RespValue;
-use crate::store::{remove_expired, Db, Entry, Value};
 
 pub enum Command {
     Set(String, String, Option<u64>),
@@ -13,6 +13,9 @@ pub enum Command {
     Ttl(String),
     LPush(String, String),
     RPush(String, String),
+    LPop(String),
+    RPop(String),
+    LRange(String, i64, i64),
 }
 
 impl Command {
@@ -57,18 +60,16 @@ impl Command {
                     let option = value_to_string(&values[3])?;
 
                     if option.to_uppercase() != "EX" {
-                        return Err(
-                            "ERR syntax err".to_string()
-                        );
+                        return Err("ERR syntax err".to_string());
                     }
 
                     let seconds = value_to_string(&values[4])?
                         .parse::<u64>()
-                        .map_err(|_|{
-                            "ERR invalid expire time".to_string()
-                        })?;
+                        .map_err(|_| "ERR invalid expire time".to_string())?;
                     Some(seconds)
-                }else { None };
+                } else {
+                    None
+                };
                 Ok(Command::Set(key, value, expires_in))
             }
 
@@ -84,10 +85,7 @@ impl Command {
 
             "EXPIRE" => {
                 if values.len() != 3 {
-                    return Err(
-                        "Err wrong number of arguments for 'expire' command"
-                            .to_string(),
-                    );
+                    return Err("Err wrong number of arguments for 'expire' command".to_string());
                 }
                 let key = value_to_string(&values[1])?;
 
@@ -100,10 +98,7 @@ impl Command {
 
             "INCR" => {
                 if values.len() != 2 {
-                    return Err(
-                        "ERR wrong number of arguments for 'incr' command"
-                            .to_string(),
-                    );
+                    return Err("ERR wrong number of arguments for 'incr' command".to_string());
                 }
 
                 let key = value_to_string(&values[1])?;
@@ -113,9 +108,7 @@ impl Command {
 
             "TTL" => {
                 if values.len() != 2 {
-                    return Err(
-                        "ERR wrong number of arguments for 'ttl' command".to_string(),
-                    );
+                    return Err("ERR wrong number of arguments for 'ttl' command".to_string());
                 }
                 let key = value_to_string(&values[1])?;
                 Ok(Command::Ttl(key))
@@ -123,9 +116,7 @@ impl Command {
 
             "LPUSH" => {
                 if values.len() != 3 {
-                    return Err(
-                        "ERR wrong number of arguments for 'LPush' command".to_string(),
-                    );
+                    return Err("ERR wrong number of arguments for 'LPush' command".to_string());
                 }
                 let key = value_to_string(&values[1])?;
                 let value = value_to_string(&values[2])?;
@@ -134,13 +125,49 @@ impl Command {
 
             "RPUSH" => {
                 if values.len() != 3 {
-                    return Err(
-                        "ERR wrong number of arguments for 'RPush' command".to_string(),
-                    );
+                    return Err("ERR wrong number of arguments for 'RPush' command".to_string());
                 }
                 let key = value_to_string(&values[1])?;
                 let value = value_to_string(&values[2])?;
                 Ok(Command::LPush(key, value))
+            }
+
+            "LPOP" => {
+                if values.len() != 2 {
+                    return Err("ERR wrong number of arguments for 'lpop' command".to_string());
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::LPop(key))
+            }
+
+            "RPOP" => {
+                if values.len() != 2 {
+                    return Err("ERR wrong number of arguments for 'rpop' command".to_string());
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::RPop(key))
+            }
+
+            "LRANGE" => {
+                if values.len() != 4 {
+                    return Err("ERR wrong number of arguments for 'lrange' command".to_string());
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                let start = value_to_string(&values[2])?
+                    .parse::<i64>()
+                    .map_err(|_| "ERR value is not an integer or out of range".to_string())?;
+
+                let stop = value_to_string(&values[3])?
+                    .parse::<i64>()
+                    .map_err(|_| "ERR value is not an integer or out of range".to_string())?;
+
+                Ok(Command::LRange(key, start, stop))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -149,16 +176,15 @@ impl Command {
     pub fn execute(self, db: &mut Db) -> Result<RespValue, String> {
         match self {
             Command::Ping => Ok(RespValue::SimpleString("PONG".to_string())),
-            Command::Set(key, value,expires_in) => {
-                let expires_at = expires_in.map(|seconds| {
-                   Instant::now() + Duration::from_secs(seconds)
-                });
+            Command::Set(key, value, expires_in) => {
+                let expires_at =
+                    expires_in.map(|seconds| Instant::now() + Duration::from_secs(seconds));
                 db.insert(
                     key,
-                    Entry{
+                    Entry {
                         value: Value::String(value),
-                        expires_at
-                    }
+                        expires_at,
+                    },
                 );
                 Ok(RespValue::SimpleString("OK".to_string()))
             }
@@ -168,25 +194,22 @@ impl Command {
                 match db.get(&key) {
                     Some(entry) => match &entry.value {
                         Value::String(value) => {
-                            Ok(RespValue::BulkString(
-                                Some(value.as_bytes().to_vec())
-                            ))
+                            Ok(RespValue::BulkString(Some(value.as_bytes().to_vec())))
                         }
-                        Value::List(_) => {
-                            Err("WrongType Operation against a key holding the wrong kind of value".to_string())
-                        }
+                        Value::List(_) => Err(
+                            "WrongType Operation against a key holding the wrong kind of value"
+                                .to_string(),
+                        ),
                     },
                     None => Ok(RespValue::BulkString(None)),
                 }
-            },
+            }
             Command::Del(key) => {
                 let expired = match db.get(&key) {
-                    Some(entry) => {
-                        match entry.expires_at {
-                            Some(expires_at) => Instant::now() >= expires_at,
-                            None => false,
-                        }
-                    }
+                    Some(entry) => match entry.expires_at {
+                        Some(expires_at) => Instant::now() >= expires_at,
+                        None => false,
+                    },
                     None => false,
                 };
 
@@ -197,42 +220,33 @@ impl Command {
                     let deleted = db.remove(&key).is_some();
                     Ok(RespValue::Integer(if deleted { 1 } else { 0 }))
                 }
-
             }
-            Command::Expire(key, seconds) => {
-                Ok(match db.get_mut(&key) {
-                    Some(entry) => {
-                        entry.expires_at =
-                            Some(Instant::now() + Duration::from_secs(seconds));
+            Command::Expire(key, seconds) => Ok(match db.get_mut(&key) {
+                Some(entry) => {
+                    entry.expires_at = Some(Instant::now() + Duration::from_secs(seconds));
 
-                        RespValue::Integer(1)
-                    }
-                    None => {
-                        RespValue::Integer(0)
-                    }
-                })
-            }
+                    RespValue::Integer(1)
+                }
+                None => RespValue::Integer(0),
+            }),
 
             Command::Incr(key) => {
                 remove_expired(db, &key);
 
-                let entry = db
-                    .entry(key)
-                    .or_insert_with(|| Entry {
-                        value: Value::String("0".to_string()),
-                        expires_at: None
-                    });
+                let entry = db.entry(key).or_insert_with(|| Entry {
+                    value: Value::String("0".to_string()),
+                    expires_at: None,
+                });
 
                 let number = match &entry.value {
-                    Value::String(value) => {
-                        value.parse::<i64>().map_err(|_| {
-                            "ERR value is not an integer or out of range".to_string()
-                        })?
-                    }
+                    Value::String(value) => value
+                        .parse::<i64>()
+                        .map_err(|_| "ERR value is not an integer or out of range".to_string())?,
                     Value::List(_) => {
                         return Err(
-                            "WrongType Operation against a key holding the wrong kind of value".to_string()
-                        )
+                            "WrongType Operation against a key holding the wrong kind of value"
+                                .to_string(),
+                        );
                     }
                 };
 
@@ -265,19 +279,17 @@ impl Command {
                 match db.get(&key) {
                     None => Ok(RespValue::Integer(-2)),
 
-                    Some(entry) => {
-                        match entry.expires_at {
-                            None => Ok(RespValue::Integer(-1)),
+                    Some(entry) => match entry.expires_at {
+                        None => Ok(RespValue::Integer(-1)),
 
-                            Some(expires_at) => {
-                                let seconds = expires_at
-                                    .saturating_duration_since(Instant::now())
-                                    .as_secs() as i64;
+                        Some(expires_at) => {
+                            let seconds = expires_at
+                                .saturating_duration_since(Instant::now())
+                                .as_secs() as i64;
 
-                                Ok(RespValue::Integer(seconds))
-                            }
+                            Ok(RespValue::Integer(seconds))
                         }
-                    }
+                    },
                 }
             }
 
@@ -295,11 +307,10 @@ impl Command {
 
                         Ok(RespValue::Integer(list.len() as i64))
                     }
-                    Value::String(_) => {
-                        Err(
-                            "WrongType Operation against a key holding the wrong kind of value ".to_string()
-                        )
-                    }
+                    Value::String(_) => Err(
+                        "WrongType Operation against a key holding the wrong kind of value "
+                            .to_string(),
+                    ),
                 }
             }
 
@@ -317,11 +328,115 @@ impl Command {
 
                         Ok(RespValue::Integer(list.len() as i64))
                     }
-                    Value::String(_) => {
-                        Err(
-                            "WrongType Operation against a key holding the wrong kind of value ".to_string()
-                        )
-                    }
+                    Value::String(_) => Err(
+                        "WrongType Operation against a key holding the wrong kind of value "
+                            .to_string(),
+                    ),
+                }
+            }
+
+            Command::LPop(key) => {
+                remove_expired(db, &key);
+
+                let result = match db.get_mut(&key) {
+                    Some(entry) => match &mut entry.value {
+                        Value::List(list) => list.pop_front(),
+                        Value::String(_) => {
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => None,
+                };
+
+                let is_empty = matches!(
+                    db.get(&key),
+                    Some(Entry {
+                        value: Value::List(list),
+                        ..
+                    }) if list.is_empty()
+                );
+
+                if is_empty {
+                    db.remove(&key);
+                }
+
+                Ok(RespValue::BulkString(
+                    result.map(|value| value.into_bytes()),
+                ))
+            }
+
+            Command::RPop(key) => {
+                remove_expired(db, &key);
+
+                let result = match db.get_mut(&key) {
+                    Some(entry) => match &mut entry.value {
+                        Value::List(list) => list.pop_back(),
+                        Value::String(_) => {
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => None,
+                };
+
+                let is_empty = matches!(
+                    db.get(&key),
+                    Some(Entry {
+                        value: Value::List(list),
+                        ..
+                    }) if list.is_empty()
+                );
+
+                if is_empty {
+                    db.remove(&key);
+                }
+
+                Ok(RespValue::BulkString(
+                    result.map(|value| value.into_bytes()),
+                ))
+            }
+
+            Command::LRange(key, start, stop) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    None => Ok(RespValue::Array(Vec::new())),
+
+                    Some(entry) => match &entry.value {
+                        Value::String(_) => Err(
+                            "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                .to_string(),
+                        ),
+
+                        Value::List(list) => {
+                            let len = list.len() as i64;
+
+                            let normalize_index = |index: i64| {
+                                if index < 0 { len + index } else { index }
+                            };
+
+                            let start = normalize_index(start).max(0);
+                            let stop = normalize_index(stop).min(len - 1);
+
+                            if len == 0 || start > stop || start >= len {
+                                return Ok(RespValue::Array(Vec::new()));
+                            }
+
+                            let values = list
+                                .iter()
+                                .skip(start as usize)
+                                .take((stop - start + 1) as usize)
+                                .map(|value| RespValue::BulkString(Some(value.as_bytes().to_vec())))
+                                .collect();
+
+                            Ok(RespValue::Array(values))
+                        }
+                    },
                 }
             }
         }
