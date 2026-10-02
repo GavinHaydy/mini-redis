@@ -30,3 +30,22 @@ pub fn remove_expired(db: &mut Db, key: &str) -> bool {
     }
     expired
 }
+
+pub fn cleanup_expired(db: &mut Db) -> usize {
+    let now = Instant::now();
+    let mut removed = 0;
+
+    db.retain(|_, entry|{
+        let expired = match entry.expires_at {
+            Some(expired_at) => now >= expired_at,
+            None => false,
+        };
+
+        if expired {
+            removed += 1;
+        }
+        !expired
+    });
+
+    removed
+}

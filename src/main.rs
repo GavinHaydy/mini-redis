@@ -6,7 +6,10 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::thread::{sleep, spawn};
+use std::time::Duration;
 use crate::resp::RespValue;
+use crate::store::cleanup_expired;
 
 fn handle_client(
     mut stream: TcpStream,
@@ -71,12 +74,31 @@ fn handle_client(
             }
         }
     }
+    println!("Client disconnected");
+
 }
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
     let db = Arc::new(Mutex::new(store::Db::new()));
+
+    // clean expired keys
+    let cleanup_db = Arc::clone(&db);
+    spawn(move || {
+        loop {
+            sleep(Duration::from_secs(1));
+
+            let mut db = cleanup_db.lock().unwrap();
+
+            let removed = cleanup_expired(&mut db);
+
+            if removed > 0 {
+                println!("Cleaned up {} expired keys", removed);
+            }
+        }
+    });
+
     println!("Mini Redis listening on 127.0.0.1:6379");
 
     for stream in listener.incoming() {
@@ -85,11 +107,10 @@ fn main() {
                 println!("Client connected: {:?}", stream.peer_addr());
 
                 let db = Arc::clone(&db);
-                thread::spawn(move || {
+                spawn(move || {
                     handle_client(stream, db);
                 });
 
-                println!("Client disconnected");
             }
             Err(e) => {
                 println!("connection error: {}", e);

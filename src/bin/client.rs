@@ -172,11 +172,9 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
-    println!("SET: {:?}", client.set_ex("name", "Gavin", 10));
-    println!("TTL: {:?}", client.ttl("name"));
+    client.set_ex("temp", "hello", 3).unwrap();
 
-    std::thread::sleep(std::time::Duration::from_secs(11));
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
-    println!("TTL after expire: {:?}", client.ttl("name"));
-    println!("GET after expire: {:?}", client.get("name"));
+    println!("GET: {:?}", client.get("temp"));
 }
