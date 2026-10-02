@@ -16,6 +16,8 @@ pub enum Command {
     LPop(String),
     RPop(String),
     LRange(String, i64, i64),
+    LLen(String),
+    LIndex(String, i64)
 }
 
 impl Command {
@@ -168,6 +170,38 @@ impl Command {
                     .map_err(|_| "ERR value is not an integer or out of range".to_string())?;
 
                 Ok(Command::LRange(key, start, stop))
+            }
+
+            "LLEN" => {
+                if values.len() != 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'llen' command"
+                            .to_string(),
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::LLen(key))
+            }
+
+            "LINDEX" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'lindex' command"
+                            .to_string(),
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                let index = value_to_string(&values[2])?
+                    .parse::<i64>()
+                    .map_err(|_| {
+                        "ERR value is not an integer or out of range".to_string()
+                    })?;
+
+                Ok(Command::LIndex(key, index))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -439,6 +473,65 @@ impl Command {
                     },
                 }
             }
+
+            Command::LLen(key) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    None => Ok(RespValue::Integer(0)),
+
+                    Some(entry) => match &entry.value {
+                        Value::List(list) => {
+                            Ok(RespValue::Integer(list.len() as i64))
+                        }
+
+                        Value::String(_) => {
+                            Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string()
+                            )
+                        }
+                    },
+                }
+            }
+
+            Command::LIndex(key, index) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    None => Ok(RespValue::BulkString(None)),
+
+                    Some(entry) => match &entry.value {
+                        Value::String(_) => {
+                            Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string()
+                            )
+                        }
+
+                        Value::List(list) => {
+                            let len = list.len() as i64;
+
+                            let index = if index < 0 {
+                                len + index
+                            } else {
+                                index
+                            };
+
+                            if index < 0 || index >= len {
+                                Ok(RespValue::BulkString(None))
+                            } else {
+                                let value = &list[index as usize];
+
+                                Ok(RespValue::BulkString(
+                                    Some(value.as_bytes().to_vec())
+                                ))
+                            }
+                        }
+                    },
+                }
+            }
+            
         }
     }
 }

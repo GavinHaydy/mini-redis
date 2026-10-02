@@ -176,11 +176,9 @@ fn main() {
     println!("{:?}", client.send(&["RPUSH", "fruits", "banana"]));
     println!("{:?}", client.send(&["RPUSH", "fruits", "orange"]));
 
-    println!("{:?}", client.send(&["LRANGE", "fruits", "0", "-1"]));
+    println!("LLEN: {:?}", client.send(&["LLEN", "fruits"]));
 
-    println!("{:?}", client.send(&["LPOP", "fruits"]));
-
-    println!("{:?}", client.send(&["RPOP", "fruits"]));
-
-    println!("{:?}", client.send(&["LRANGE", "fruits", "0", "-1"]));
+    println!("LINDEX 0: {:?}", client.send(&["LINDEX", "fruits", "0"]));
+    println!("LINDEX -1: {:?}", client.send(&["LINDEX", "fruits", "-1"]));
+    println!("LINDEX 5: {:?}", client.send(&["LINDEX", "fruits", "5"]));
 }
