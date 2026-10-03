@@ -5,7 +5,6 @@ mod command;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 use crate::resp::RespValue;
@@ -89,7 +88,13 @@ fn main() {
         loop {
             sleep(Duration::from_secs(1));
 
-            let mut db = cleanup_db.lock().unwrap();
+            let mut db = match cleanup_db.lock(){
+                Ok(db) => db,
+                Err(err) => {
+                    eprintln!("Cleanup thread: failed to lock DB: {err}");
+                    break;
+                }
+            };
 
             let removed = cleanup_expired(&mut db);
 

@@ -1,7 +1,6 @@
-use mini_redis::resp;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use mini_redis::resp::RespValue;
+use mini_redis::resp::{parse, RespValue};
 
 struct Client {
     stream: TcpStream,
@@ -10,11 +9,11 @@ struct Client {
 
 impl Client {
     fn expect_simple_string(
-        response: resp::RespValue,
+        response: RespValue,
     ) -> Result<String, String> {
         match response {
-            resp::RespValue::SimpleString(s) => Ok(s),
-            resp::RespValue::Error(e) => Err(e),
+            RespValue::SimpleString(s) => Ok(s),
+            RespValue::Error(e) => Err(e),
             _ => Err("unexpected response".to_string()),
         }
     }
@@ -28,7 +27,7 @@ impl Client {
         }
     }
 
-    fn send(&mut self, args: &[&str]) -> Result<resp::RespValue, String> {
+    fn send(&mut self, args: &[&str]) -> Result<RespValue, String> {
         let request = encode_command(args);
 
         self.stream.write_all(&request).expect("failed to write");
@@ -45,7 +44,7 @@ impl Client {
 
             self.input.extend_from_slice(&buffer[..n]);
 
-            match resp::parse(&self.input) {
+            match parse(&self.input) {
                 Ok(Some((response, consumed))) => {
                     self.input.drain(..consumed);
                     return Ok(response);
@@ -66,10 +65,10 @@ impl Client {
         let response = self.send(&["SET", key, value])?;
 
         match response {
-            resp::RespValue::SimpleString(value) if value == "OK" => {
+            RespValue::SimpleString(value) if value == "OK" => {
                 Ok(())
             }
-            resp::RespValue::Error(err) => {Err(err)}
+            RespValue::Error(err) => {Err(err)}
             _ => Err("unexpected response ".to_string())
         }
     }
@@ -78,14 +77,14 @@ impl Client {
         let response = self.send(&["GET", key])?;
 
         match response {
-            resp::RespValue::BulkString(Some(value)) => {
+            RespValue::BulkString(Some(value)) => {
                 let value = String::from_utf8(value)
                     .map_err(|_| "invalid utf8".to_string())?;
 
                 Ok(Some(value))
             }
-            resp::RespValue::BulkString(None) => Ok(None),
-            resp::RespValue::Error(e) => Err(e),
+            RespValue::BulkString(None) => Ok(None),
+            RespValue::Error(e) => Err(e),
             _ => Err("unexpected response".to_string()),
         }
     }
@@ -94,8 +93,8 @@ impl Client {
         let response = self.send(&["DEL", key])?;
 
         match response {
-            resp::RespValue::Integer(value) => Ok(value),
-            resp::RespValue::Error(e) => Err(e),
+            RespValue::Integer(value) => Ok(value),
+            RespValue::Error(e) => Err(e),
             _ => Err("unexpected response".to_string()),
         }
     }
@@ -110,8 +109,8 @@ impl Client {
         let response = self.send(&["INCR", key])?;
 
         match response {
-            resp::RespValue::Integer(value) => Ok(value),
-            resp::RespValue::Error(e) => Err(e),
+            RespValue::Integer(value) => Ok(value),
+            RespValue::Error(e) => Err(e),
             _ => Err("unexpected response".to_string()),
         }
     }
@@ -171,14 +170,9 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
-
-    println!("{:?}", client.send(&["LPUSH", "fruits", "apple"]));
-    println!("{:?}", client.send(&["RPUSH", "fruits", "banana"]));
-    println!("{:?}", client.send(&["RPUSH", "fruits", "orange"]));
-
-    println!("LLEN: {:?}", client.send(&["LLEN", "fruits"]));
-
-    println!("LINDEX 0: {:?}", client.send(&["LINDEX", "fruits", "0"]));
-    println!("LINDEX -1: {:?}", client.send(&["LINDEX", "fruits", "-1"]));
-    println!("LINDEX 5: {:?}", client.send(&["LINDEX", "fruits", "5"]));
+    
+    println!("{:?}", client.send(&["SET", "name", "Gavin","EX","3"]));
+    println!("{:?}", client.send(&["SET", "age", "18","EX","5"]));
+    println!("{:?}", client.send(&["SET", "addr", "SiChuan","EX","8"]));
+    println!("{:?}", client.send(&["SET", "car", "binli","EX","10"]));
 }
