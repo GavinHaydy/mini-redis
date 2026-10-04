@@ -1,5 +1,5 @@
 use crate::resp::RespValue;
-use crate::store::{Db, Entry, Value, remove_expired};
+use crate::store::{Db, Entry, Value, remove_expired, cleanup_expired};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -17,7 +17,19 @@ pub enum Command {
     RPop(String),
     LRange(String, i64, i64),
     LLen(String),
-    LIndex(String, i64)
+    LIndex(String, i64),
+    Keys(String),
+}
+
+fn key_matches(key: &str, pattern: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    if let Some(prefix) = pattern.strip_suffix("*") {
+        return key.starts_with(prefix);
+    }
+
+    key == pattern
 }
 
 impl Command {
@@ -131,12 +143,12 @@ impl Command {
                 }
                 let key = value_to_string(&values[1])?;
                 let value = value_to_string(&values[2])?;
-                Ok(Command::LPush(key, value))
+                Ok(Command::RPush(key, value))
             }
 
             "LPOP" => {
                 if values.len() != 2 {
-                    return Err("ERR wrong number of arguments for 'lpop' command".to_string());
+                    return Err("ERR wrong number of arguments for 'lPop' command".to_string());
                 }
 
                 let key = value_to_string(&values[1])?;
@@ -146,7 +158,7 @@ impl Command {
 
             "RPOP" => {
                 if values.len() != 2 {
-                    return Err("ERR wrong number of arguments for 'rpop' command".to_string());
+                    return Err("ERR wrong number of arguments for 'rPop' command".to_string());
                 }
 
                 let key = value_to_string(&values[1])?;
@@ -156,7 +168,7 @@ impl Command {
 
             "LRANGE" => {
                 if values.len() != 4 {
-                    return Err("ERR wrong number of arguments for 'lrange' command".to_string());
+                    return Err("ERR wrong number of arguments for 'lRange' command".to_string());
                 }
 
                 let key = value_to_string(&values[1])?;
@@ -175,7 +187,7 @@ impl Command {
             "LLEN" => {
                 if values.len() != 2 {
                     return Err(
-                        "ERR wrong number of arguments for 'llen' command"
+                        "ERR wrong number of arguments for 'lLen' command"
                             .to_string(),
                     );
                 }
@@ -188,7 +200,7 @@ impl Command {
             "LINDEX" => {
                 if values.len() != 3 {
                     return Err(
-                        "ERR wrong number of arguments for 'lindex' command"
+                        "ERR wrong number of arguments for 'lIndex' command"
                             .to_string(),
                     );
                 }
@@ -202,6 +214,16 @@ impl Command {
                     })?;
 
                 Ok(Command::LIndex(key, index))
+            }
+
+            "KEYS" => {
+                if values.len() != 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'keys' command".to_string()
+                    )
+                }
+                let pattern = value_to_string(&values[1])?;
+                Ok(Command::Keys(pattern))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -377,7 +399,7 @@ impl Command {
                         Value::List(list) => list.pop_front(),
                         Value::String(_) => {
                             return Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
                             );
                         }
@@ -410,7 +432,7 @@ impl Command {
                         Value::List(list) => list.pop_back(),
                         Value::String(_) => {
                             return Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
                             );
                         }
@@ -443,7 +465,7 @@ impl Command {
 
                     Some(entry) => match &entry.value {
                         Value::String(_) => Err(
-                            "WRONGTYPE Operation against a key holding the wrong kind of value"
+                            "WrongType Operation against a key holding the wrong kind of value"
                                 .to_string(),
                         ),
 
@@ -487,7 +509,7 @@ impl Command {
 
                         Value::String(_) => {
                             Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string()
                             )
                         }
@@ -504,7 +526,7 @@ impl Command {
                     Some(entry) => match &entry.value {
                         Value::String(_) => {
                             Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string()
                             )
                         }
@@ -531,6 +553,30 @@ impl Command {
                     },
                 }
             }
+
+            Command::Keys(pattern) => {
+                cleanup_expired(db);
+
+                let mut keys: Vec<RespValue> = db
+                    .keys()
+                    .filter(|key| key_matches(key, &pattern))
+                    .map(|key| {
+                        RespValue::BulkString(Some(key.as_bytes().to_vec()))
+                    })
+                    .collect();
+
+                keys.sort_by(|a, b| {
+                    match (a,b) {
+                        (
+                        RespValue::BulkString(Some(a)),
+                        RespValue::BulkString(Some(b)),
+                        ) => a.cmp(b),
+                        _ => std::cmp::Ordering::Equal,
+                    }
+                });
+                Ok(RespValue::Array(keys))
+            }
+
             
         }
     }
