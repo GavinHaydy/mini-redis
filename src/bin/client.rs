@@ -170,9 +170,246 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
-    
-    println!("{:?}", client.send(&["SET", "name", "Gavin","EX","3"]));
-    println!("{:?}", client.send(&["SET", "age", "18","EX","5"]));
-    println!("{:?}", client.send(&["SET", "addr", "SiChuan","EX","8"]));
-    println!("{:?}", client.send(&["SET", "car", "binli","EX","10"]));
+
+    println!("--- FLUSHDB ---");
+
+    println!("{:?}", client.send(&["FLUSHDB"]));
+
+    println!("{:?}", client.send(&["KEYS", "*"]));
+
+
+    // =========================
+    // SET
+    // =========================
+
+    println!("--- SET ---");
+
+    println!(
+        "{:?}",
+        client.send(&["SET", "name", "Gavin", "EX", "3"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["SET", "age", "18", "EX", "5"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["SET", "addr", "SiChuan", "EX", "8"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["SET", "car", "binli", "EX", "10"])
+    );
+
+
+    // =========================
+    // List
+    // =========================
+
+    println!("--- LIST ---");
+
+    println!(
+        "{:?}",
+        client.send(&["LPUSH", "fruits", "apple"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["RPUSH", "fruits", "banana"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["RPUSH", "fruits", "orange"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["RPUSH", "fruits", "watermelon"])
+    );
+
+
+    // =========================
+    // LINDEX
+    // =========================
+
+    println!("--- LINDEX ---");
+
+    // 正向索引
+    println!(
+        "{:?}",
+        client.send(&["LINDEX", "fruits", "0"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LINDEX", "fruits", "1"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LINDEX", "fruits", "2"])
+    );
+
+    // 负索引
+    println!(
+        "{:?}",
+        client.send(&["LINDEX", "fruits", "-1"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LINDEX", "fruits", "-2"])
+    );
+
+    // 越界
+    println!(
+        "{:?}",
+        client.send(&["LINDEX", "fruits", "100"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LINDEX", "fruits", "-100"])
+    );
+
+
+    // =========================
+    // LRANGE
+    // =========================
+
+    println!("--- LRANGE ---");
+
+    // 全部
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "0", "-1"])
+    );
+
+    // 前两个
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "0", "1"])
+    );
+
+    // 后两个
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "-2", "-1"])
+    );
+
+    // 从第二个开始
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "1", "-1"])
+    );
+
+    // 超出范围
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "0", "100"])
+    );
+
+    // start > stop
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "2", "1"])
+    );
+
+
+    // =========================
+    // LLEN
+    // =========================
+
+    println!("--- LLEN ---");
+
+    println!(
+        "{:?}",
+        client.send(&["LLEN", "fruits"])
+    );
+
+
+    // =========================
+    // KEYS
+    // =========================
+
+    println!("--- KEYS ---");
+
+    println!(
+        "{:?}",
+        client.send(&["KEYS", "*"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["KEYS", "user*"])
+    );
+
+
+    // =========================
+    // TTL
+    // =========================
+
+    println!("--- TTL ---");
+
+    println!(
+        "{:?}",
+        client.send(&["TTL", "name"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["TTL", "age"])
+    );
+
+
+    // =========================
+    // 等待 name 过期
+    // =========================
+
+    println!("--- WAIT 4 SECONDS ---");
+
+    std::thread::sleep(std::time::Duration::from_secs(4));
+
+
+    // name EX 3，应该已经过期
+    println!(
+        "{:?}",
+        client.send(&["GET", "name"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["TTL", "name"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["KEYS", "*"])
+    );
+
+
+    // =========================
+    // FLUSHDB
+    // =========================
+
+    println!("--- FLUSHDB ---");
+
+    println!(
+        "{:?}",
+        client.send(&["FLUSHDB"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["KEYS", "*"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LLEN", "fruits"])
+    );
 }

@@ -19,6 +19,7 @@ pub enum Command {
     LLen(String),
     LIndex(String, i64),
     Keys(String),
+    FlushDB
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -30,6 +31,32 @@ fn key_matches(key: &str, pattern: &str) -> bool {
     }
 
     key == pattern
+}
+
+fn normalize_index(index: i64, len: usize) -> Option<usize> {
+    let len = len as i64;
+
+    let index = if index < 0 {
+        len + index
+    } else {
+        index
+    };
+
+    if index < 0 || index >= len {
+        None
+    }else {
+        Some(index as usize)
+    }
+}
+
+fn normalize_range_index(index: i64, len: usize) -> i64 {
+    let len = len as i64;
+
+    if index < 0 {
+        len + index
+    } else {
+        index
+    }
 }
 
 impl Command {
@@ -224,6 +251,15 @@ impl Command {
                 }
                 let pattern = value_to_string(&values[1])?;
                 Ok(Command::Keys(pattern))
+            }
+
+            "FLUSHDB" => {
+                if values.len() != 1 {
+                    return Err(
+                        "ERR wrong number of arguments for 'flushdb' command".to_string()
+                    );
+                }
+                Ok(Command::FlushDB)
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -460,39 +496,54 @@ impl Command {
             Command::LRange(key, start, stop) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    None => Ok(RespValue::Array(Vec::new())),
+                let Some(entry) = db.get(&key) else {
+                    return Ok(RespValue::Array(Vec::new()));
+                };
 
-                    Some(entry) => match &entry.value {
-                        Value::String(_) => Err(
-                            "WrongType Operation against a key holding the wrong kind of value"
-                                .to_string(),
-                        ),
+                match &entry.value {
+                    Value::List(list) => {
+                        let len = list.len();
 
-                        Value::List(list) => {
-                            let len = list.len() as i64;
-
-                            let normalize_index = |index: i64| {
-                                if index < 0 { len + index } else { index }
-                            };
-
-                            let start = normalize_index(start).max(0);
-                            let stop = normalize_index(stop).min(len - 1);
-
-                            if len == 0 || start > stop || start >= len {
-                                return Ok(RespValue::Array(Vec::new()));
-                            }
-
-                            let values = list
-                                .iter()
-                                .skip(start as usize)
-                                .take((stop - start + 1) as usize)
-                                .map(|value| RespValue::BulkString(Some(value.as_bytes().to_vec())))
-                                .collect();
-
-                            Ok(RespValue::Array(values))
+                        if len == 0 {
+                            return Ok(RespValue::Array(Vec::new()));
                         }
-                    },
+
+                        let mut start = normalize_range_index(start, len);
+                        let mut stop = normalize_range_index(stop, len);
+
+                        // 小于 0 的 start，从 0 开始
+                        if start < 0 {
+                            start = 0;
+                        }
+
+                        // 大于等于 len 的 stop，限制到最后一个元素
+                        if stop >= len as i64 {
+                            stop = len as i64 - 1;
+                        }
+
+                        // start > stop，没有结果
+                        if start > stop {
+                            return Ok(RespValue::Array(Vec::new()));
+                        }
+
+                        let result = list
+                            .iter()
+                            .skip(start as usize)
+                            .take((stop - start + 1) as usize)
+                            .map(|value| {
+                                RespValue::BulkString(
+                                    Some(value.as_bytes().to_vec())
+                                )
+                            })
+                            .collect();
+
+                        Ok(RespValue::Array(result))
+                    }
+
+                    Value::String(_) => Err(
+                        "WrongType Operation against a key holding the wrong kind of value"
+                            .to_string()
+                    ),
                 }
             }
 
@@ -520,37 +571,27 @@ impl Command {
             Command::LIndex(key, index) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    None => Ok(RespValue::BulkString(None)),
+                let Some(entry) = db.get(&key) else {
+                    return Ok(RespValue::BulkString(None));
+                };
 
-                    Some(entry) => match &entry.value {
-                        Value::String(_) => {
-                            Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string()
-                            )
-                        }
 
-                        Value::List(list) => {
-                            let len = list.len() as i64;
+                match &entry.value {
+                    Value::List(list) => {
+                        let Some(index) = normalize_index(index, list.len()) else {
+                            return Ok(RespValue::BulkString(None));
+                        };
 
-                            let index = if index < 0 {
-                                len + index
-                            } else {
-                                index
-                            };
+                        let value = &list[index];
 
-                            if index < 0 || index >= len {
-                                Ok(RespValue::BulkString(None))
-                            } else {
-                                let value = &list[index as usize];
+                        Ok(RespValue::BulkString(
+                            Some(value.as_bytes().to_vec())
+                        ))
+                    }
+                    Value::String(_) => Err(
+                        "WrongType Operation against a key holding the wrong kind of value".to_string()
+                    )
 
-                                Ok(RespValue::BulkString(
-                                    Some(value.as_bytes().to_vec())
-                                ))
-                            }
-                        }
-                    },
                 }
             }
 
@@ -577,7 +618,12 @@ impl Command {
                 Ok(RespValue::Array(keys))
             }
 
-            
+            Command::FlushDB => {
+                db.clear();
+
+                Ok(RespValue::SimpleString("OK".to_string()))
+            }
+
         }
     }
 }
