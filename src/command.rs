@@ -18,6 +18,7 @@ pub enum Command {
     LRange(String, i64, i64),
     LLen(String),
     LIndex(String, i64),
+    LSet(String, i64, String),
     Keys(String),
     FlushDB
 }
@@ -241,6 +242,24 @@ impl Command {
                     })?;
 
                 Ok(Command::LIndex(key, index))
+            }
+
+            "LSET" => {
+                if values.len() != 4 {
+                    return Err(
+                        "ERR wrong number of arguments for 'lSet' command".to_string(),
+                    )
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                let index = value_to_string(&values[2])?
+                    .parse::<i64>()
+                    .map_err(|_| "ERR invalid index".to_string())?;
+
+                let value = value_to_string(&values[3])?;
+
+                Ok(Command::LSet(key, index, value))
             }
 
             "KEYS" => {
@@ -593,6 +612,31 @@ impl Command {
                     )
 
                 }
+            }
+
+            Command::LSet(key, index, value) => {
+                remove_expired(db, &key);
+
+                let Some(entry) = db.get_mut(&key) else {
+                    return Err("ERR no such key".to_string());
+                };
+
+                match &mut entry.value {
+                    Value::List(list) => {
+                        let Some(index) = normalize_index(index, list.len()) else {
+                            return Err("ERR index out of range".to_string());
+                        };
+
+                        list[index] = value;
+
+                        Ok(RespValue::SimpleString("OK".to_string()))
+                    }
+
+                    Value::String(_) => Err(
+                        "WrongType Operation against a key holding the wrong kind of value".to_string()
+                    )
+                }
+
             }
 
             Command::Keys(pattern) => {

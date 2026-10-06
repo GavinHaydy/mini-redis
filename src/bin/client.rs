@@ -171,6 +171,10 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
+    // =========================
+    // FLUSHDB
+    // =========================
+
     println!("--- FLUSHDB ---");
 
     println!("{:?}", client.send(&["FLUSHDB"]));
@@ -179,34 +183,7 @@ fn main() {
 
 
     // =========================
-    // SET
-    // =========================
-
-    println!("--- SET ---");
-
-    println!(
-        "{:?}",
-        client.send(&["SET", "name", "Gavin", "EX", "3"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["SET", "age", "18", "EX", "5"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["SET", "addr", "SiChuan", "EX", "8"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["SET", "car", "binli", "EX", "10"])
-    );
-
-
-    // =========================
-    // List
+    // 创建 List
     // =========================
 
     println!("--- LIST ---");
@@ -233,16 +210,56 @@ fn main() {
 
 
     // =========================
-    // LINDEX
+    // 查看初始 List
+    // =========================
+
+    println!("--- INITIAL LIST ---");
+
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "0", "-1"])
+    );
+
+
+    // =========================
+    // LSET 正向索引
+    // =========================
+
+    println!("--- LSET POSITIVE INDEX ---");
+
+    println!(
+        "{:?}",
+        client.send(&["LSET", "fruits", "1", "grape"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "0", "-1"])
+    );
+
+
+    // =========================
+    // LSET 负索引
+    // =========================
+
+    println!("--- LSET NEGATIVE INDEX ---");
+
+    println!(
+        "{:?}",
+        client.send(&["LSET", "fruits", "-1", "mango"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LRANGE", "fruits", "0", "-1"])
+    );
+
+
+    // =========================
+    // LINDEX 验证修改结果
     // =========================
 
     println!("--- LINDEX ---");
-
-    // 正向索引
-    println!(
-        "{:?}",
-        client.send(&["LINDEX", "fruits", "0"])
-    );
 
     println!(
         "{:?}",
@@ -251,80 +268,66 @@ fn main() {
 
     println!(
         "{:?}",
-        client.send(&["LINDEX", "fruits", "2"])
-    );
-
-    // 负索引
-    println!(
-        "{:?}",
         client.send(&["LINDEX", "fruits", "-1"])
     );
 
-    println!(
-        "{:?}",
-        client.send(&["LINDEX", "fruits", "-2"])
-    );
 
-    // 越界
-    println!(
-        "{:?}",
-        client.send(&["LINDEX", "fruits", "100"])
-    );
+    // =========================
+    // LSET 越界
+    // =========================
+
+    println!("--- LSET OUT OF RANGE ---");
 
     println!(
         "{:?}",
-        client.send(&["LINDEX", "fruits", "-100"])
+        client.send(&["LSET", "fruits", "100", "hello"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LSET", "fruits", "-100", "hello"])
     );
 
 
     // =========================
-    // LRANGE
+    // LSET 不存在的 Key
     // =========================
 
-    println!("--- LRANGE ---");
+    println!("--- LSET MISSING KEY ---");
 
-    // 全部
+    println!(
+        "{:?}",
+        client.send(&["LSET", "not-exist", "0", "hello"])
+    );
+
+
+    // =========================
+    // WRONGTYPE
+    // =========================
+
+    println!("--- LSET WRONGTYPE ---");
+
+    println!(
+        "{:?}",
+        client.send(&["SET", "name", "Gavin"])
+    );
+
+    println!(
+        "{:?}",
+        client.send(&["LSET", "name", "0", "hello"])
+    );
+
+
+    // =========================
+    // 最终检查
+    // =========================
+
+    println!("--- FINAL LIST ---");
+
     println!(
         "{:?}",
         client.send(&["LRANGE", "fruits", "0", "-1"])
     );
-
-    // 前两个
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "0", "1"])
-    );
-
-    // 后两个
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "-2", "-1"])
-    );
-
-    // 从第二个开始
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "1", "-1"])
-    );
-
-    // 超出范围
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "0", "100"])
-    );
-
-    // start > stop
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "2", "1"])
-    );
-
-
-    // =========================
-    // LLEN
-    // =========================
-
-    println!("--- LLEN ---");
 
     println!(
         "{:?}",
@@ -333,67 +336,7 @@ fn main() {
 
 
     // =========================
-    // KEYS
-    // =========================
-
-    println!("--- KEYS ---");
-
-    println!(
-        "{:?}",
-        client.send(&["KEYS", "*"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["KEYS", "user*"])
-    );
-
-
-    // =========================
-    // TTL
-    // =========================
-
-    println!("--- TTL ---");
-
-    println!(
-        "{:?}",
-        client.send(&["TTL", "name"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["TTL", "age"])
-    );
-
-
-    // =========================
-    // 等待 name 过期
-    // =========================
-
-    println!("--- WAIT 4 SECONDS ---");
-
-    std::thread::sleep(std::time::Duration::from_secs(4));
-
-
-    // name EX 3，应该已经过期
-    println!(
-        "{:?}",
-        client.send(&["GET", "name"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["TTL", "name"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["KEYS", "*"])
-    );
-
-
-    // =========================
-    // FLUSHDB
+    // 清理
     // =========================
 
     println!("--- FLUSHDB ---");
@@ -406,10 +349,5 @@ fn main() {
     println!(
         "{:?}",
         client.send(&["KEYS", "*"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["LLEN", "fruits"])
     );
 }
