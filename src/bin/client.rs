@@ -171,183 +171,33 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
-    // =========================
-    // FLUSHDB
-    // =========================
-
     println!("--- FLUSHDB ---");
 
     println!("{:?}", client.send(&["FLUSHDB"]));
 
-    println!("{:?}", client.send(&["KEYS", "*"]));
+
+    println!("--- SADD ---");
+
+    println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
+
+    println!("{:?}", client.send(&["SADD", "fruits", "banana"]));
+
+    println!("{:?}", client.send(&["SADD", "fruits", "orange"]));
 
 
-    // =========================
-    // 创建 List
-    // =========================
+    println!("--- DUPLICATE ---");
 
-    println!("--- LIST ---");
-
-    println!(
-        "{:?}",
-        client.send(&["LPUSH", "fruits", "apple"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["RPUSH", "fruits", "banana"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["RPUSH", "fruits", "orange"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["RPUSH", "fruits", "watermelon"])
-    );
+    println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
 
 
-    // =========================
-    // 查看初始 List
-    // =========================
+    println!("--- WRONGTYPE ---");
 
-    println!("--- INITIAL LIST ---");
+    println!("{:?}", client.send(&["SET", "name", "Gavin"]));
 
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "0", "-1"])
-    );
+    println!("{:?}", client.send(&["SADD", "name", "hello"]));
 
-
-    // =========================
-    // LSET 正向索引
-    // =========================
-
-    println!("--- LSET POSITIVE INDEX ---");
-
-    println!(
-        "{:?}",
-        client.send(&["LSET", "fruits", "1", "grape"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "0", "-1"])
-    );
-
-
-    // =========================
-    // LSET 负索引
-    // =========================
-
-    println!("--- LSET NEGATIVE INDEX ---");
-
-    println!(
-        "{:?}",
-        client.send(&["LSET", "fruits", "-1", "mango"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "0", "-1"])
-    );
-
-
-    // =========================
-    // LINDEX 验证修改结果
-    // =========================
-
-    println!("--- LINDEX ---");
-
-    println!(
-        "{:?}",
-        client.send(&["LINDEX", "fruits", "1"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["LINDEX", "fruits", "-1"])
-    );
-
-
-    // =========================
-    // LSET 越界
-    // =========================
-
-    println!("--- LSET OUT OF RANGE ---");
-
-    println!(
-        "{:?}",
-        client.send(&["LSET", "fruits", "100", "hello"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["LSET", "fruits", "-100", "hello"])
-    );
-
-
-    // =========================
-    // LSET 不存在的 Key
-    // =========================
-
-    println!("--- LSET MISSING KEY ---");
-
-    println!(
-        "{:?}",
-        client.send(&["LSET", "not-exist", "0", "hello"])
-    );
-
-
-    // =========================
-    // WRONGTYPE
-    // =========================
-
-    println!("--- LSET WRONGTYPE ---");
-
-    println!(
-        "{:?}",
-        client.send(&["SET", "name", "Gavin"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["LSET", "name", "0", "hello"])
-    );
-
-
-    // =========================
-    // 最终检查
-    // =========================
-
-    println!("--- FINAL LIST ---");
-
-    println!(
-        "{:?}",
-        client.send(&["LRANGE", "fruits", "0", "-1"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["LLEN", "fruits"])
-    );
-
-
-    // =========================
-    // 清理
-    // =========================
 
     println!("--- FLUSHDB ---");
 
-    println!(
-        "{:?}",
-        client.send(&["FLUSHDB"])
-    );
-
-    println!(
-        "{:?}",
-        client.send(&["KEYS", "*"])
-    );
+    println!("{:?}", client.send(&["FLUSHDB"]));
 }

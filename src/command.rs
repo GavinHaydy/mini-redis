@@ -1,6 +1,6 @@
 use crate::resp::RespValue;
 use crate::store::{Db, Entry, Value, remove_expired, cleanup_expired};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 pub enum Command {
@@ -19,6 +19,7 @@ pub enum Command {
     LLen(String),
     LIndex(String, i64),
     LSet(String, i64, String),
+    SAdd(String, String),
     Keys(String),
     FlushDB
 }
@@ -262,6 +263,21 @@ impl Command {
                 Ok(Command::LSet(key, index, value))
             }
 
+            "SADD" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'sadd' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                let member = value_to_string(&values[2])?;
+
+                Ok(Command::SAdd(key, member))
+            }
+
+
             "KEYS" => {
                 if values.len() != 2 {
                     return Err(
@@ -307,7 +323,7 @@ impl Command {
                         Value::String(value) => {
                             Ok(RespValue::BulkString(Some(value.as_bytes().to_vec())))
                         }
-                        Value::List(_) => Err(
+                        Value::List(_)| Value::Set(_) => Err(
                             "WrongType Operation against a key holding the wrong kind of value"
                                 .to_string(),
                         ),
@@ -353,7 +369,7 @@ impl Command {
                     Value::String(value) => value
                         .parse::<i64>()
                         .map_err(|_| "ERR value is not an integer or out of range".to_string())?,
-                    Value::List(_) => {
+                    Value::List(_) | Value::Set(_) => {
                         return Err(
                             "WrongType Operation against a key holding the wrong kind of value"
                                 .to_string(),
@@ -418,7 +434,7 @@ impl Command {
 
                         Ok(RespValue::Integer(list.len() as i64))
                     }
-                    Value::String(_) => Err(
+                    Value::String(_)  | Value::Set(_) => Err(
                         "WrongType Operation against a key holding the wrong kind of value "
                             .to_string(),
                     ),
@@ -439,7 +455,7 @@ impl Command {
 
                         Ok(RespValue::Integer(list.len() as i64))
                     }
-                    Value::String(_) => Err(
+                    Value::String(_)  | Value::Set(_) => Err(
                         "WrongType Operation against a key holding the wrong kind of value "
                             .to_string(),
                     ),
@@ -452,7 +468,7 @@ impl Command {
                 let result = match db.get_mut(&key) {
                     Some(entry) => match &mut entry.value {
                         Value::List(list) => list.pop_front(),
-                        Value::String(_) => {
+                        Value::String(_) | Value::Set(_)  => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -485,7 +501,7 @@ impl Command {
                 let result = match db.get_mut(&key) {
                     Some(entry) => match &mut entry.value {
                         Value::List(list) => list.pop_back(),
-                        Value::String(_) => {
+                        Value::String(_)  | Value::Set(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -559,7 +575,7 @@ impl Command {
                         Ok(RespValue::Array(result))
                     }
 
-                    Value::String(_) => Err(
+                    Value::String(_) | Value::Set(_)  => Err(
                         "WrongType Operation against a key holding the wrong kind of value"
                             .to_string()
                     ),
@@ -577,7 +593,7 @@ impl Command {
                             Ok(RespValue::Integer(list.len() as i64))
                         }
 
-                        Value::String(_) => {
+                        Value::String(_) | Value::Set(_)  => {
                             Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string()
@@ -607,7 +623,7 @@ impl Command {
                             Some(value.as_bytes().to_vec())
                         ))
                     }
-                    Value::String(_) => Err(
+                    Value::String(_) | Value::Set(_)  => Err(
                         "WrongType Operation against a key holding the wrong kind of value".to_string()
                     )
 
@@ -632,11 +648,54 @@ impl Command {
                         Ok(RespValue::SimpleString("OK".to_string()))
                     }
 
-                    Value::String(_) => Err(
+                    Value::String(_) | Value::Set(_)  => Err(
                         "WrongType Operation against a key holding the wrong kind of value".to_string()
                     )
                 }
 
+            }
+
+            Command::SAdd(key, member) => {
+                remove_expired(db, &key);
+
+                match db.get_mut(&key) {
+                    Some(entry) => {
+                        match &mut entry.value {
+                            Value::Set(set) => {
+                                let added = set.insert(member);
+
+                                if added {
+                                    Ok(RespValue::Integer(1))
+                                } else {
+                                    Ok(RespValue::Integer(0))
+                                }
+                            }
+
+                            Value::String(_) | Value::List(_) => {
+                                Err(
+                                    "WrongType Operation against a key holding the wrong kind of value"
+                                        .to_string()
+                                )
+                            }
+                        }
+                    }
+
+                    None => {
+                        let mut set = HashSet::new();
+
+                        set.insert(member);
+
+                        db.insert(
+                            key,
+                            Entry {
+                                value: Value::Set(set),
+                                expires_at: None,
+                            },
+                        );
+
+                        Ok(RespValue::Integer(1))
+                    }
+                }
             }
 
             Command::Keys(pattern) => {

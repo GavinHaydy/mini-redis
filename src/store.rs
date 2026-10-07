@@ -1,9 +1,10 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Instant;
 
 pub enum Value {
     String(String),
     List(VecDeque<String>),
+    Set(HashSet<String>),
 }
 
 pub struct Entry {
