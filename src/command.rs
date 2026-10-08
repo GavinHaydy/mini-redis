@@ -20,6 +20,7 @@ pub enum Command {
     LIndex(String, i64),
     LSet(String, i64, String),
     SAdd(String, String),
+    SIsMember(String, String),
     Keys(String),
     FlushDB
 }
@@ -277,6 +278,20 @@ impl Command {
                 Ok(Command::SAdd(key, member))
             }
 
+            "SISMEMBER" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'sismember' command"
+                            .to_string(),
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                let member = value_to_string(&values[2])?;
+
+                Ok(Command::SIsMember(key, member))
+            }
 
             "KEYS" => {
                 if values.len() != 2 {
@@ -695,6 +710,33 @@ impl Command {
 
                         Ok(RespValue::Integer(1))
                     }
+                }
+            }
+
+            Command::SIsMember(key, member) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => {
+                        match &entry.value {
+                            Value::Set(set) => {
+                                if set.contains(&member) {
+                                    Ok(RespValue::Integer(1))
+                                } else {
+                                    Ok(RespValue::Integer(0))
+                                }
+                            }
+
+                            Value::String(_) | Value::List(_) => {
+                                Err(
+                                    "WrongType Operation against a key holding the wrong kind of value"
+                                        .to_string(),
+                                )
+                            }
+                        }
+                    }
+
+                    None => Ok(RespValue::Integer(0)),
                 }
             }
 
