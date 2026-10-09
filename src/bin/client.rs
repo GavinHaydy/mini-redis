@@ -172,32 +172,16 @@ fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
     println!("--- FLUSHDB ---");
-
     println!("{:?}", client.send(&["FLUSHDB"]));
-
 
     println!("--- SADD ---");
-
     println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
-
     println!("{:?}", client.send(&["SADD", "fruits", "banana"]));
-
     println!("{:?}", client.send(&["SADD", "fruits", "orange"]));
 
+    println!("--- SMEMBERS ---");
+    println!("{:?}", client.send(&["SMEMBERS", "fruits"]));
 
-    println!("--- DUPLICATE ---");
-
-    println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
-
-
-    println!("--- WRONGTYPE ---");
-
-    println!("{:?}", client.send(&["SET", "name", "Gavin"]));
-
-    println!("{:?}", client.send(&["SADD", "name", "hello"]));
-
-
-    println!("--- FLUSHDB ---");
-
-    println!("{:?}", client.send(&["FLUSHDB"]));
+    println!("--- MISSING KEY ---");
+    println!("{:?}", client.send(&["SMEMBERS", "not-exist"]));
 }

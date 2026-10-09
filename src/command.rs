@@ -21,6 +21,7 @@ pub enum Command {
     LSet(String, i64, String),
     SAdd(String, String),
     SIsMember(String, String),
+    SMembers(String),
     Keys(String),
     FlushDB
 }
@@ -291,6 +292,19 @@ impl Command {
                 let member = value_to_string(&values[2])?;
 
                 Ok(Command::SIsMember(key, member))
+            }
+
+            "SMEMBERS" => {
+                if values.len() != 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'sMembers' command"
+                            .to_string(),
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::SMembers(key))
             }
 
             "KEYS" => {
@@ -737,6 +751,38 @@ impl Command {
                     }
 
                     None => Ok(RespValue::Integer(0)),
+                }
+            }
+
+            Command::SMembers(key) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => {
+                        match &entry.value {
+                            Value::Set(set) => {
+                                let members = set
+                                    .iter()
+                                    .map(|member| {
+                                        RespValue::BulkString(
+                                            Some(member.as_bytes().to_vec())
+                                        )
+                                    })
+                                    .collect();
+
+                                Ok(RespValue::Array(members))
+                            }
+
+                            Value::String(_) | Value::List(_) => {
+                                Err(
+                                    "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                        .to_string(),
+                                )
+                            }
+                        }
+                    }
+
+                    None => Ok(RespValue::Array(Vec::new())),
                 }
             }
 
