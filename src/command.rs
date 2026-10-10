@@ -22,6 +22,7 @@ pub enum Command {
     SAdd(String, String),
     SIsMember(String, String),
     SMembers(String),
+    SRem(String, String),
     Keys(String),
     FlushDB
 }
@@ -305,6 +306,19 @@ impl Command {
                 let key = value_to_string(&values[1])?;
 
                 Ok(Command::SMembers(key))
+            }
+
+            "SREM" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'srem' command".to_string(),
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+                let member = value_to_string(&values[2])?;
+
+                Ok(Command::SRem(key, member))
             }
 
             "KEYS" => {
@@ -783,6 +797,33 @@ impl Command {
                     }
 
                     None => Ok(RespValue::Array(Vec::new())),
+                }
+            }
+
+            Command::SRem(key, member) => {
+                remove_expired(db, &key);
+
+                match db.get_mut(&key) {
+                    Some(entry) => {
+                        match &mut entry.value {
+                            Value::Set(set) => {
+                                if set.remove(&member) {
+                                    Ok(RespValue::Integer(1))
+                                } else {
+                                    Ok(RespValue::Integer(0))
+                                }
+                            }
+
+                            Value::String(_) | Value::List(_) => {
+                                Err(
+                                    "WrongType Operation against a key holding the wrong kind of value"
+                                        .to_string(),
+                                )
+                            }
+                        }
+                    }
+
+                    None => Ok(RespValue::Integer(0)),
                 }
             }
 
