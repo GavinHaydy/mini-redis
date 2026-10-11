@@ -174,29 +174,30 @@ fn main() {
     println!("--- FLUSHDB ---");
     println!("{:?}", client.send(&["FLUSHDB"]));
 
+    println!("--- EMPTY SET ---");
+    println!("{:?}", client.send(&["SCARD", "fruits"]));
+
     println!("--- SADD ---");
     println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
     println!("{:?}", client.send(&["SADD", "fruits", "banana"]));
     println!("{:?}", client.send(&["SADD", "fruits", "orange"]));
 
-    println!("--- BEFORE SREM ---");
-    println!("{:?}", client.send(&["SMEMBERS", "fruits"]));
+    println!("--- DUPLICATE ---");
+    println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
 
-    println!("--- REMOVE EXISTING MEMBER ---");
+    println!("--- SCARD ---");
+    println!("{:?}", client.send(&["SCARD", "fruits"]));
+
+    println!("--- SREM ---");
     println!("{:?}", client.send(&["SREM", "fruits", "banana"]));
+    println!("{:?}", client.send(&["SCARD", "fruits"]));
 
-    println!("--- REMOVE SAME MEMBER AGAIN ---");
-    println!("{:?}", client.send(&["SREM", "fruits", "banana"]));
-
-    println!("--- REMOVE MISSING KEY ---");
-    println!("{:?}", client.send(&["SREM", "not-exist", "apple"]));
-
-    println!("--- AFTER SREM ---");
-    println!("{:?}", client.send(&["SMEMBERS", "fruits"]));
+    println!("--- MISSING KEY ---");
+    println!("{:?}", client.send(&["SCARD", "not-exist"]));
 
     println!("--- WRONGTYPE ---");
     println!("{:?}", client.send(&["SET", "name", "Gavin"]));
-    println!("{:?}", client.send(&["SREM", "name", "Gavin"]));
+    println!("{:?}", client.send(&["SCARD", "name"]));
 
     println!("--- FLUSHDB ---");
     println!("{:?}", client.send(&["FLUSHDB"]));

@@ -23,6 +23,7 @@ pub enum Command {
     SIsMember(String, String),
     SMembers(String),
     SRem(String, String),
+    SCard(String),
     Keys(String),
     FlushDB
 }
@@ -319,6 +320,18 @@ impl Command {
                 let member = value_to_string(&values[2])?;
 
                 Ok(Command::SRem(key, member))
+            }
+
+            "SCARD" => {
+                if values.len() != 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'scard' command".to_string(),
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::SCard(key))
             }
 
             "KEYS" => {
@@ -812,6 +825,29 @@ impl Command {
                                 } else {
                                     Ok(RespValue::Integer(0))
                                 }
+                            }
+
+                            Value::String(_) | Value::List(_) => {
+                                Err(
+                                    "WrongType Operation against a key holding the wrong kind of value"
+                                        .to_string(),
+                                )
+                            }
+                        }
+                    }
+
+                    None => Ok(RespValue::Integer(0)),
+                }
+            }
+
+            Command::SCard(key) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => {
+                        match &entry.value {
+                            Value::Set(set) => {
+                                Ok(RespValue::Integer(set.len() as i64))
                             }
 
                             Value::String(_) | Value::List(_) => {
