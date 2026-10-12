@@ -174,30 +174,25 @@ fn main() {
     println!("--- FLUSHDB ---");
     println!("{:?}", client.send(&["FLUSHDB"]));
 
-    println!("--- EMPTY SET ---");
-    println!("{:?}", client.send(&["SCARD", "fruits"]));
+    println!("--- CREATE SET A ---");
+    println!("{:?}", client.send(&["SADD", "fruits1", "apple"]));
+    println!("{:?}", client.send(&["SADD", "fruits1", "banana"]));
+    println!("{:?}", client.send(&["SADD", "fruits1", "orange"]));
 
-    println!("--- SADD ---");
-    println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
-    println!("{:?}", client.send(&["SADD", "fruits", "banana"]));
-    println!("{:?}", client.send(&["SADD", "fruits", "orange"]));
+    println!("--- CREATE SET B ---");
+    println!("{:?}", client.send(&["SADD", "fruits2", "banana"]));
+    println!("{:?}", client.send(&["SADD", "fruits2", "orange"]));
+    println!("{:?}", client.send(&["SADD", "fruits2", "grape"]));
 
-    println!("--- DUPLICATE ---");
-    println!("{:?}", client.send(&["SADD", "fruits", "apple"]));
+    println!("--- INTERSECTION ---");
+    println!("{:?}", client.send(&["SINTER", "fruits1", "fruits2"]));
 
-    println!("--- SCARD ---");
-    println!("{:?}", client.send(&["SCARD", "fruits"]));
-
-    println!("--- SREM ---");
-    println!("{:?}", client.send(&["SREM", "fruits", "banana"]));
-    println!("{:?}", client.send(&["SCARD", "fruits"]));
-
-    println!("--- MISSING KEY ---");
-    println!("{:?}", client.send(&["SCARD", "not-exist"]));
+    println!("--- NO COMMON MEMBERS ---");
+    println!("{:?}", client.send(&["SINTER", "fruits1", "not-exist"]));
 
     println!("--- WRONGTYPE ---");
     println!("{:?}", client.send(&["SET", "name", "Gavin"]));
-    println!("{:?}", client.send(&["SCARD", "name"]));
+    println!("{:?}", client.send(&["SINTER", "fruits1", "name"]));
 
     println!("--- FLUSHDB ---");
     println!("{:?}", client.send(&["FLUSHDB"]));

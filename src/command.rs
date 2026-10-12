@@ -24,6 +24,7 @@ pub enum Command {
     SMembers(String),
     SRem(String, String),
     SCard(String),
+    SInter(String, String),
     Keys(String),
     FlushDB
 }
@@ -332,6 +333,19 @@ impl Command {
                 let key = value_to_string(&values[1])?;
 
                 Ok(Command::SCard(key))
+            }
+
+            "SINTER" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'sinter' command".to_string(),
+                    );
+                }
+
+                let key1 = value_to_string(&values[1])?;
+                let key2 = value_to_string(&values[2])?;
+
+                Ok(Command::SInter(key1, key2))
             }
 
             "KEYS" => {
@@ -861,6 +875,46 @@ impl Command {
 
                     None => Ok(RespValue::Integer(0)),
                 }
+            }
+
+            Command::SInter(key1, key2) => {
+                remove_expired(db, &key1);
+                remove_expired(db, &key2);
+
+                let set1 = match db.get(&key1) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set,
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => return Ok(RespValue::Array(Vec::new())),
+                };
+
+                let set2 = match db.get(&key2) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set,
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WrongType Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => return Ok(RespValue::Array(Vec::new())),
+                };
+
+                let members = set1
+                    .intersection(set2)
+                    .map(|member| {
+                        RespValue::BulkString(Some(member.as_bytes().to_vec()))
+                    })
+                    .collect();
+
+                Ok(RespValue::Array(members))
             }
 
             Command::Keys(pattern) => {
