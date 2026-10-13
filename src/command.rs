@@ -25,6 +25,7 @@ pub enum Command {
     SRem(String, String),
     SCard(String),
     SInter(String, String),
+    SUnion(String, String),
     Keys(String),
     FlushDB
 }
@@ -346,6 +347,19 @@ impl Command {
                 let key2 = value_to_string(&values[2])?;
 
                 Ok(Command::SInter(key1, key2))
+            }
+
+            "SUNION" => {
+                if values.len() != 3 {
+                    return Err(
+                        "ERR wrong number of arguments for 'sunion' command".to_string(),
+                    );
+                }
+
+                let key1 = value_to_string(&values[1])?;
+                let key2 = value_to_string(&values[2])?;
+
+                Ok(Command::SUnion(key1, key2))
             }
 
             "KEYS" => {
@@ -909,6 +923,77 @@ impl Command {
 
                 let members = set1
                     .intersection(set2)
+                    .map(|member| {
+                        RespValue::BulkString(Some(member.as_bytes().to_vec()))
+                    })
+                    .collect();
+
+                Ok(RespValue::Array(members))
+            }
+
+            Command::SUnion(key1, key2) => {
+                remove_expired(db, &key1);
+                remove_expired(db, &key2);
+
+                let set1 = match db.get(&key1) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set,
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => {
+                        return match db.get(&key2) {
+                            Some(entry) => match &entry.value {
+                                Value::Set(set) => {
+                                    let members = set
+                                        .iter()
+                                        .map(|member| {
+                                            RespValue::BulkString(Some(
+                                                member.as_bytes().to_vec(),
+                                            ))
+                                        })
+                                        .collect();
+
+                                    Ok(RespValue::Array(members))
+                                }
+                                Value::String(_) | Value::List(_) => Err(
+                                    "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                        .to_string(),
+                                ),
+                            },
+                            None => Ok(RespValue::Array(Vec::new())),
+                        };
+                    }
+                };
+
+                let set2 = match db.get(&key2) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set,
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => {
+                        let members = set1
+                            .iter()
+                            .map(|member| {
+                                RespValue::BulkString(Some(member.as_bytes().to_vec()))
+                            })
+                            .collect();
+
+                        return Ok(RespValue::Array(members));
+                    }
+                };
+
+                let members = set1
+                    .union(set2)
                     .map(|member| {
                         RespValue::BulkString(Some(member.as_bytes().to_vec()))
                     })
