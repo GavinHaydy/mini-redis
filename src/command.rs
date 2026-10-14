@@ -26,6 +26,7 @@ pub enum Command {
     SCard(String),
     SInter(String, String),
     SUnion(String, String),
+    SDiff(String, String),
     Keys(String),
     FlushDB
 }
@@ -360,6 +361,17 @@ impl Command {
                 let key2 = value_to_string(&values[2])?;
 
                 Ok(Command::SUnion(key1, key2))
+            }
+
+            "SDIFF" => {
+                if values.len() != 3 {
+                    return Err("wrong number of arguments for 'sdiff' command".to_string());
+                }
+
+                let key1 = value_to_string(&values[1])?;
+                let key2 = value_to_string(&values[2])?;
+
+                Ok(Command::SDiff(key1, key2))
             }
 
             "KEYS" => {
@@ -996,6 +1008,54 @@ impl Command {
                     .union(set2)
                     .map(|member| {
                         RespValue::BulkString(Some(member.as_bytes().to_vec()))
+                    })
+                    .collect();
+
+                Ok(RespValue::Array(members))
+            }
+
+            Command::SDiff(key1, key2) => {
+                // 1. 删除已经过期的 key
+                remove_expired(db, &key1);
+                remove_expired(db, &key2);
+
+                // 2. 获取第一个集合，复制它的元素
+                let mut result = match db.get(&key1) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set.clone(),
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => HashSet::new(),
+                };
+
+                // 3. 从结果中移除第二个集合包含的元素
+                match db.get(&key2) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => {
+                            for member in set {
+                                result.remove(member);
+                            }
+                        }
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => {}
+                }
+
+                // 4. 将集合元素转换为 RESP 数组
+                let members = result
+                    .into_iter()
+                    .map(|member| {
+                        RespValue::BulkString(Some(member.into_bytes()))
                     })
                     .collect();
 
