@@ -27,6 +27,7 @@ pub enum Command {
     SInter(String, String),
     SUnion(String, String),
     SDiff(String, String),
+    SMove(String, String, String),
     Keys(String),
     FlushDB
 }
@@ -372,6 +373,20 @@ impl Command {
                 let key2 = value_to_string(&values[2])?;
 
                 Ok(Command::SDiff(key1, key2))
+            }
+
+            "SMOVE" => {
+                if values.len() != 4 {
+                    return Err(
+                        "wrong number of arguments for 'smove' command".to_string()
+                    );
+                }
+
+                let source = value_to_string(&values[1])?;
+                let destination = value_to_string(&values[2])?;
+                let member = value_to_string(&values[3])?;
+
+                Ok(Command::SMove(source, destination, member))
             }
 
             "KEYS" => {
@@ -842,7 +857,7 @@ impl Command {
 
                             Value::String(_) | Value::List(_) => {
                                 Err(
-                                    "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string(),
                                 )
                             }
@@ -912,7 +927,7 @@ impl Command {
                         Value::Set(set) => set,
                         Value::String(_) | Value::List(_) => {
                             return Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
                             );
                         }
@@ -952,7 +967,7 @@ impl Command {
                         Value::Set(set) => set,
                         Value::String(_) | Value::List(_) => {
                             return Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
                             );
                         }
@@ -973,7 +988,7 @@ impl Command {
                                     Ok(RespValue::Array(members))
                                 }
                                 Value::String(_) | Value::List(_) => Err(
-                                    "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                    "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string(),
                                 ),
                             },
@@ -987,7 +1002,7 @@ impl Command {
                         Value::Set(set) => set,
                         Value::String(_) | Value::List(_) => {
                             return Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
                             );
                         }
@@ -1025,7 +1040,7 @@ impl Command {
                         Value::Set(set) => set.clone(),
                         Value::String(_) | Value::List(_) => {
                             return Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
                             );
                         }
@@ -1043,7 +1058,7 @@ impl Command {
                         }
                         Value::String(_) | Value::List(_) => {
                             return Err(
-                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
                             );
                         }
@@ -1060,6 +1075,95 @@ impl Command {
                     .collect();
 
                 Ok(RespValue::Array(members))
+            }
+
+            Command::SMove(source, destination, member) => {
+                remove_expired(db, &source);
+                remove_expired(db, &destination);
+
+                // 同一个 key：只检查元素是否存在，不实际移动
+                if source == destination {
+                    return match db.get(&source) {
+                        Some(entry) => match &entry.value {
+                            Value::Set(set) => {
+                                Ok(RespValue::Integer(
+                                    if set.contains(&member) { 1 } else { 0 }
+                                ))
+                            }
+                            Value::String(_) | Value::List(_) => Err(
+                                "WrongType Operation against a key holding the wrong kind of value"
+                                    .to_string()
+                            ),
+                        },
+                        None => Ok(RespValue::Integer(0)),
+                    };
+                }
+
+                // 1. 检查源 key 和目标 key 的类型
+                for key in [&source, &destination] {
+                    if let Some(entry) = db.get(key) {
+                        match &entry.value {
+                            Value::Set(_) => {}
+                            Value::String(_) | Value::List(_) => {
+                                return Err(
+                                    "WrongType Operation against a key holding the wrong kind of value"
+                                        .to_string()
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // 2. 从源集合中删除元素
+                let removed = match db.get_mut(&source) {
+                    Some(entry) => match &mut entry.value {
+                        Value::Set(set) => set.remove(&member),
+                        Value::String(_) | Value::List(_) => unreachable!(),
+                    },
+                    None => false,
+                };
+
+                // 源集合没有该元素，移动失败
+                if !removed {
+                    return Ok(RespValue::Integer(0));
+                }
+
+                // 3. 如果源集合已经空了，删除源 key
+                let source_is_empty = match db.get(&source) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set.is_empty(),
+                        Value::String(_) | Value::List(_) => false,
+                    },
+                    None => false,
+                };
+
+                if source_is_empty {
+                    db.remove(&source);
+                }
+
+                // 4. 将元素添加到目标集合
+                match db.get_mut(&destination) {
+                    Some(entry) => match &mut entry.value {
+                        Value::Set(set) => {
+                            set.insert(member);
+                        }
+                        Value::String(_) | Value::List(_) => unreachable!(),
+                    },
+                    None => {
+                        let mut set = HashSet::new();
+                        set.insert(member);
+
+                        db.insert(
+                            destination,
+                            Entry {
+                                value: Value::Set(set),
+                                expires_at: None,
+                            },
+                        );
+                    }
+                }
+
+                Ok(RespValue::Integer(1))
             }
 
             Command::Keys(pattern) => {
