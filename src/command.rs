@@ -1,5 +1,6 @@
 use crate::resp::RespValue;
 use crate::store::{Db, Entry, Value, remove_expired, cleanup_expired};
+use rand::seq::IteratorRandom;
 use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
@@ -28,6 +29,7 @@ pub enum Command {
     SUnion(String, String),
     SDiff(String, String),
     SMove(String, String, String),
+    SPop(String),
     Keys(String),
     FlushDB
 }
@@ -387,6 +389,18 @@ impl Command {
                 let member = value_to_string(&values[3])?;
 
                 Ok(Command::SMove(source, destination, member))
+            }
+
+            "SPOP" => {
+                if values.len() != 2 {
+                    return Err(
+                        "wrong number of arguments for 'spop' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::SPop(key))
             }
 
             "KEYS" => {
@@ -1164,6 +1178,66 @@ impl Command {
                 }
 
                 Ok(RespValue::Integer(1))
+            }
+
+            Command::SPop(key) => {
+                remove_expired(db, &key);
+
+                // 1. 检查 key 是否存在，以及类型是否正确
+                match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(_) => {}
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WrongType Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => {
+                        return Ok(RespValue::BulkString(None));
+                    }
+                }
+
+                // 2. 随机选取一个元素
+                let member = match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => {
+                            set.iter().choose(&mut rand::thread_rng()).cloned()
+                        }
+                        Value::String(_) | Value::List(_) => unreachable!(),
+                    },
+                    None => None,
+                };
+
+                // 3. 没有元素时返回 nil
+                let Some(member) = member else {
+                    db.remove(&key);
+                    return Ok(RespValue::BulkString(None));
+                };
+
+                // 4. 删除选中的元素
+                if let Some(entry) = db.get_mut(&key) {
+                    if let Value::Set(set) = &mut entry.value {
+                        set.remove(&member);
+                    }
+                }
+
+                // 5. 如果集合已经空了，删除整个 key
+                let is_empty = match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set.is_empty(),
+                        Value::String(_) | Value::List(_) => false,
+                    },
+                    None => true,
+                };
+
+                if is_empty {
+                    db.remove(&key);
+                }
+
+                // 6. 返回被移除的元素
+                Ok(RespValue::BulkString(Some(member.into_bytes())))
             }
 
             Command::Keys(pattern) => {
