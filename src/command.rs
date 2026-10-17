@@ -30,6 +30,7 @@ pub enum Command {
     SDiff(String, String),
     SMove(String, String, String),
     SPop(String),
+    SRandMember(String),
     Keys(String),
     FlushDB
 }
@@ -401,6 +402,18 @@ impl Command {
                 let key = value_to_string(&values[1])?;
 
                 Ok(Command::SPop(key))
+            }
+
+            "SRANDMEMBER" => {
+                if values.len() != 2 {
+                    return Err(
+                        "wrong number of arguments for 'srandmember' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::SRandMember(key))
             }
 
             "KEYS" => {
@@ -1238,6 +1251,33 @@ impl Command {
 
                 // 6. 返回被移除的元素
                 Ok(RespValue::BulkString(Some(member.into_bytes())))
+            }
+
+            Command::SRandMember(key) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => {
+                            let member = set
+                                .iter()
+                                .choose(&mut rand::thread_rng())
+                                .cloned();
+
+                            match member {
+                                Some(member) => {
+                                    Ok(RespValue::BulkString(Some(member.into_bytes())))
+                                }
+                                None => Ok(RespValue::BulkString(None)),
+                            }
+                        }
+                        Value::String(_) | Value::List(_) => Err(
+                            "WrongType Operation against a key holding the wrong kind of value"
+                                .to_string()
+                        ),
+                    },
+                    None => Ok(RespValue::BulkString(None)),
+                }
             }
 
             Command::Keys(pattern) => {
