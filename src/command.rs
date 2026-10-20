@@ -33,6 +33,7 @@ pub enum Command {
     SRandMember(String),
     SInterStore(String, String, String),
     SUnionStore(String, String, String),
+    SDiffStore(String, String, String),
     Keys(String),
     FlushDB
 }
@@ -444,6 +445,20 @@ impl Command {
                 let key2 = value_to_string(&values[3])?;
 
                 Ok(Command::SUnionStore(destination, key1, key2))
+            }
+
+            "SDIFFSTORE" => {
+                if values.len() != 4 {
+                    return Err(
+                        "wrong number of arguments for 'sdiffstore' command".to_string()
+                    );
+                }
+
+                let destination = value_to_string(&values[1])?;
+                let key1 = value_to_string(&values[2])?;
+                let key2 = value_to_string(&values[3])?;
+
+                Ok(Command::SDiffStore(destination, key1, key2))
             }
 
             "KEYS" => {
@@ -1423,6 +1438,64 @@ impl Command {
                 }
 
                 // 6. 返回并集的元素数量
+                Ok(RespValue::Integer(count))
+            }
+
+            Command::SDiffStore(destination, key1, key2) => {
+                // 1. 清理过期 key
+                remove_expired(db, &destination);
+                remove_expired(db, &key1);
+                remove_expired(db, &key2);
+
+                // 2. 复制第一个集合
+                let mut result = match db.get(&key1) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => set.clone(),
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WrongType Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => HashSet::new(),
+                };
+
+                // 3. 移除第二个集合中存在的元素
+                match db.get(&key2) {
+                    Some(entry) => match &entry.value {
+                        Value::Set(set) => {
+                            for member in set {
+                                result.remove(member);
+                            }
+                        }
+                        Value::String(_) | Value::List(_) => {
+                            return Err(
+                                "WrongType Operation against a key holding the wrong kind of value"
+                                    .to_string(),
+                            );
+                        }
+                    },
+                    None => {}
+                }
+
+                // 4. 计算结果数量
+                let count = result.len() as i64;
+
+                // 5. 替换目标 key
+                db.remove(&destination);
+
+                if !result.is_empty() {
+                    db.insert(
+                        destination,
+                        Entry {
+                            value: Value::Set(result),
+                            expires_at: None,
+                        },
+                    );
+                }
+
+                // 6. 返回差集的元素数量
                 Ok(RespValue::Integer(count))
             }
 
