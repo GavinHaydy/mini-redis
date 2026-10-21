@@ -171,29 +171,23 @@ fn encode_command(args: &[&str]) -> Vec<u8> {
 fn main() {
     let mut client = Client::connect("127.0.0.1:6379");
 
-    println!("--- FLUSHDB ---");
-    println!("{:?}", client.send(&["FLUSHDB"]));
+    println!("--- HSET TEST ---");
 
-    println!("--- CREATE SET A ---");
-    println!("{:?}", client.send(&["SADD", "fruits1", "apple"]));
-    println!("{:?}", client.send(&["SADD", "fruits1", "banana"]));
-    println!("{:?}", client.send(&["SADD", "fruits1", "orange"]));
+    client.send(&["FLUSHDB"]);
 
-    println!("--- CREATE SET B ---");
-    println!("{:?}", client.send(&["SADD", "fruits2", "banana"]));
-    println!("{:?}", client.send(&["SADD", "fruits2", "orange"]));
-    println!("{:?}", client.send(&["SADD", "fruits2", "grape"]));
+    println!(
+        "set name: {:?}",
+        client.send(&["HSET", "user:1", "name", "Gavin"])
+    );
 
-    println!("--- INTERSECTION ---");
-    println!("{:?}", client.send(&["SINTER", "fruits1", "fruits2"]));
+    println!(
+        "set age: {:?}",
+        client.send(&["HSET", "user:1", "age", "18"])
+    );
 
-    println!("--- NO COMMON MEMBERS ---");
-    println!("{:?}", client.send(&["SINTER", "fruits1", "not-exist"]));
-
-    println!("--- WRONGTYPE ---");
-    println!("{:?}", client.send(&["SET", "name", "Gavin"]));
-    println!("{:?}", client.send(&["SINTER", "fruits1", "name"]));
-
-    println!("--- FLUSHDB ---");
-    println!("{:?}", client.send(&["FLUSHDB"]));
+    // 覆盖已有字段，预期返回 0
+    println!(
+        "update name: {:?}",
+        client.send(&["HSET", "user:1", "name", "Alex"])
+    );
 }

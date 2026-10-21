@@ -5,6 +5,7 @@ pub enum Value {
     String(String),
     List(VecDeque<String>),
     Set(HashSet<String>),
+    Hash(HashMap<String, String>),
 }
 
 pub struct Entry {

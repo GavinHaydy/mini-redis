@@ -1,7 +1,7 @@
 use crate::resp::RespValue;
 use crate::store::{Db, Entry, Value, remove_expired, cleanup_expired};
 use rand::seq::IteratorRandom;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 pub enum Command {
@@ -35,7 +35,8 @@ pub enum Command {
     SUnionStore(String, String, String),
     SDiffStore(String, String, String),
     Keys(String),
-    FlushDB
+    FlushDB,
+    HSet(String, String, String),
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -480,6 +481,20 @@ impl Command {
                 Ok(Command::FlushDB)
             }
 
+            "HSET" => {
+                if values.len() != 4 {
+                    return Err(
+                        "wrong number of arguments for 'hset' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+                let field = value_to_string(&values[2])?;
+                let value = value_to_string(&values[3])?;
+
+                Ok(Command::HSet(key, field, value))
+            }
+
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
@@ -506,7 +521,7 @@ impl Command {
                         Value::String(value) => {
                             Ok(RespValue::BulkString(Some(value.as_bytes().to_vec())))
                         }
-                        Value::List(_)| Value::Set(_) => Err(
+                        Value::List(_)| Value::Set(_) | Value::Hash(_) => Err(
                             "WrongType Operation against a key holding the wrong kind of value"
                                 .to_string(),
                         ),
@@ -552,7 +567,7 @@ impl Command {
                     Value::String(value) => value
                         .parse::<i64>()
                         .map_err(|_| "ERR value is not an integer or out of range".to_string())?,
-                    Value::List(_) | Value::Set(_) => {
+                    Value::List(_) | Value::Set(_) | Value::Hash(_) => {
                         return Err(
                             "WrongType Operation against a key holding the wrong kind of value"
                                 .to_string(),
@@ -617,7 +632,7 @@ impl Command {
 
                         Ok(RespValue::Integer(list.len() as i64))
                     }
-                    Value::String(_)  | Value::Set(_) => Err(
+                    Value::String(_)  | Value::Set(_) | Value::Hash(_) => Err(
                         "WrongType Operation against a key holding the wrong kind of value "
                             .to_string(),
                     ),
@@ -638,7 +653,7 @@ impl Command {
 
                         Ok(RespValue::Integer(list.len() as i64))
                     }
-                    Value::String(_)  | Value::Set(_) => Err(
+                    Value::String(_)  | Value::Set(_) | Value::Hash(_) => Err(
                         "WrongType Operation against a key holding the wrong kind of value "
                             .to_string(),
                     ),
@@ -651,7 +666,7 @@ impl Command {
                 let result = match db.get_mut(&key) {
                     Some(entry) => match &mut entry.value {
                         Value::List(list) => list.pop_front(),
-                        Value::String(_) | Value::Set(_)  => {
+                        Value::String(_) | Value::Set(_)  | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -684,7 +699,7 @@ impl Command {
                 let result = match db.get_mut(&key) {
                     Some(entry) => match &mut entry.value {
                         Value::List(list) => list.pop_back(),
-                        Value::String(_)  | Value::Set(_) => {
+                        Value::String(_)  | Value::Set(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -758,7 +773,7 @@ impl Command {
                         Ok(RespValue::Array(result))
                     }
 
-                    Value::String(_) | Value::Set(_)  => Err(
+                    Value::String(_) | Value::Set(_)  | Value::Hash(_) => Err(
                         "WrongType Operation against a key holding the wrong kind of value"
                             .to_string()
                     ),
@@ -776,7 +791,7 @@ impl Command {
                             Ok(RespValue::Integer(list.len() as i64))
                         }
 
-                        Value::String(_) | Value::Set(_)  => {
+                        Value::String(_) | Value::Set(_)  | Value::Hash(_) => {
                             Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string()
@@ -806,7 +821,7 @@ impl Command {
                             Some(value.as_bytes().to_vec())
                         ))
                     }
-                    Value::String(_) | Value::Set(_)  => Err(
+                    Value::String(_) | Value::Set(_)  | Value::Hash(_) => Err(
                         "WrongType Operation against a key holding the wrong kind of value".to_string()
                     )
 
@@ -831,7 +846,7 @@ impl Command {
                         Ok(RespValue::SimpleString("OK".to_string()))
                     }
 
-                    Value::String(_) | Value::Set(_)  => Err(
+                    Value::String(_) | Value::Set(_)  | Value::Hash(_) => Err(
                         "WrongType Operation against a key holding the wrong kind of value".to_string()
                     )
                 }
@@ -854,7 +869,7 @@ impl Command {
                                 }
                             }
 
-                            Value::String(_) | Value::List(_) => {
+                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
                                 Err(
                                     "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string()
@@ -895,7 +910,7 @@ impl Command {
                                 }
                             }
 
-                            Value::String(_) | Value::List(_) => {
+                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
                                 Err(
                                     "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string(),
@@ -927,7 +942,7 @@ impl Command {
                                 Ok(RespValue::Array(members))
                             }
 
-                            Value::String(_) | Value::List(_) => {
+                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
                                 Err(
                                     "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string(),
@@ -954,7 +969,7 @@ impl Command {
                                 }
                             }
 
-                            Value::String(_) | Value::List(_) => {
+                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
                                 Err(
                                     "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string(),
@@ -977,7 +992,7 @@ impl Command {
                                 Ok(RespValue::Integer(set.len() as i64))
                             }
 
-                            Value::String(_) | Value::List(_) => {
+                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
                                 Err(
                                     "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string(),
@@ -997,7 +1012,7 @@ impl Command {
                 let set1 = match db.get(&key1) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1010,7 +1025,7 @@ impl Command {
                 let set2 = match db.get(&key2) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1037,7 +1052,7 @@ impl Command {
                 let set1 = match db.get(&key1) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1059,7 +1074,7 @@ impl Command {
 
                                     Ok(RespValue::Array(members))
                                 }
-                                Value::String(_) | Value::List(_) => Err(
+                                Value::String(_) | Value::List(_) | Value::Hash(_) => Err(
                                     "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string(),
                                 ),
@@ -1072,7 +1087,7 @@ impl Command {
                 let set2 = match db.get(&key2) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1110,7 +1125,7 @@ impl Command {
                 let mut result = match db.get(&key1) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set.clone(),
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1128,7 +1143,7 @@ impl Command {
                                 result.remove(member);
                             }
                         }
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1162,7 +1177,7 @@ impl Command {
                                     if set.contains(&member) { 1 } else { 0 }
                                 ))
                             }
-                            Value::String(_) | Value::List(_) => Err(
+                            Value::String(_) | Value::List(_) | Value::Hash(_) => Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string()
                             ),
@@ -1176,7 +1191,7 @@ impl Command {
                     if let Some(entry) = db.get(key) {
                         match &entry.value {
                             Value::Set(_) => {}
-                            Value::String(_) | Value::List(_) => {
+                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
                                 return Err(
                                     "WrongType Operation against a key holding the wrong kind of value"
                                         .to_string()
@@ -1190,7 +1205,7 @@ impl Command {
                 let removed = match db.get_mut(&source) {
                     Some(entry) => match &mut entry.value {
                         Value::Set(set) => set.remove(&member),
-                        Value::String(_) | Value::List(_) => unreachable!(),
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => unreachable!(),
                     },
                     None => false,
                 };
@@ -1204,7 +1219,7 @@ impl Command {
                 let source_is_empty = match db.get(&source) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set.is_empty(),
-                        Value::String(_) | Value::List(_) => false,
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => false,
                     },
                     None => false,
                 };
@@ -1219,7 +1234,7 @@ impl Command {
                         Value::Set(set) => {
                             set.insert(member);
                         }
-                        Value::String(_) | Value::List(_) => unreachable!(),
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => unreachable!(),
                     },
                     None => {
                         let mut set = HashSet::new();
@@ -1245,7 +1260,7 @@ impl Command {
                 match db.get(&key) {
                     Some(entry) => match &entry.value {
                         Value::Set(_) => {}
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1263,7 +1278,7 @@ impl Command {
                         Value::Set(set) => {
                             set.iter().choose(&mut rand::thread_rng()).cloned()
                         }
-                        Value::String(_) | Value::List(_) => unreachable!(),
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => unreachable!(),
                     },
                     None => None,
                 };
@@ -1285,7 +1300,7 @@ impl Command {
                 let is_empty = match db.get(&key) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set.is_empty(),
-                        Value::String(_) | Value::List(_) => false,
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => false,
                     },
                     None => true,
                 };
@@ -1316,7 +1331,7 @@ impl Command {
                                 None => Ok(RespValue::BulkString(None)),
                             }
                         }
-                        Value::String(_) | Value::List(_) => Err(
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => Err(
                             "WrongType Operation against a key holding the wrong kind of value"
                                 .to_string()
                         ),
@@ -1335,7 +1350,7 @@ impl Command {
                 let mut result = match db.get(&key1) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set.clone(),
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1351,7 +1366,7 @@ impl Command {
                         Value::Set(set) => {
                             result.retain(|member| set.contains(member));
                         }
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1395,7 +1410,7 @@ impl Command {
                 let mut result = match db.get(&key1) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set.clone(),
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1411,7 +1426,7 @@ impl Command {
                         Value::Set(set) => {
                             result.extend(set.iter().cloned());
                         }
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1451,7 +1466,7 @@ impl Command {
                 let mut result = match db.get(&key1) {
                     Some(entry) => match &entry.value {
                         Value::Set(set) => set.clone(),
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1469,7 +1484,7 @@ impl Command {
                                 result.remove(member);
                             }
                         }
-                        Value::String(_) | Value::List(_) => {
+                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
                             return Err(
                                 "WrongType Operation against a key holding the wrong kind of value"
                                     .to_string(),
@@ -1526,6 +1541,42 @@ impl Command {
                 db.clear();
 
                 Ok(RespValue::SimpleString("OK".to_string()))
+            }
+
+            Command::HSet(key, field, value) => {
+                remove_expired(db, &key);
+
+                match db.get_mut(&key) {
+                    Some(entry) => match &mut entry.value {
+                        Value::Hash(hash) => {
+                            let is_new = !hash.contains_key(&field);
+
+                            hash.insert(field, value);
+
+                            Ok(RespValue::Integer(if is_new { 1 } else { 0 }))
+                        }
+                        Value::String(_) | Value::List(_) | Value::Set(_) => {
+                            Err(
+                                "WrongType Operation against a key holding the wrong kind of value"
+                                    .to_string()
+                            )
+                        }
+                    },
+                    None => {
+                        let mut hash = HashMap::new();
+                        hash.insert(field, value);
+
+                        db.insert(
+                            key,
+                            Entry {
+                                value: Value::Hash(hash),
+                                expires_at: None,
+                            },
+                        );
+
+                        Ok(RespValue::Integer(1))
+                    }
+                }
             }
 
         }
