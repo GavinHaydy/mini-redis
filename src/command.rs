@@ -37,6 +37,7 @@ pub enum Command {
     Keys(String),
     FlushDB,
     HSet(String, String, String),
+    HGet(String, String),
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -493,6 +494,19 @@ impl Command {
                 let value = value_to_string(&values[3])?;
 
                 Ok(Command::HSet(key, field, value))
+            }
+
+            "HGET" => {
+                if values.len() != 3 {
+                    return Err(
+                        "wrong number of arguments for 'hget' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+                let field = value_to_string(&values[2])?;
+
+                Ok(Command::HGet(key, field))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -1576,6 +1590,29 @@ impl Command {
 
                         Ok(RespValue::Integer(1))
                     }
+                }
+            }
+
+            Command::HGet(key, field) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Hash(hash) => {
+                            match hash.get(&field) {
+                                Some(value) => Ok(
+                                    RespValue::BulkString(
+                                        Some(value.as_bytes().to_vec())
+                                    )
+                                ),
+                                None => Ok(RespValue::BulkString(None)),
+                            }
+                        }
+                        Value::String(_)
+                        | Value::List(_)
+                        | Value::Set(_) => Err("WrongType".to_string()),
+                    },
+                    None => Ok(RespValue::BulkString(None)),
                 }
             }
 
