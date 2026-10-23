@@ -38,6 +38,7 @@ pub enum Command {
     FlushDB,
     HSet(String, String, String),
     HGet(String, String),
+    HDel(String, Vec<String>),
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -507,6 +508,24 @@ impl Command {
                 let field = value_to_string(&values[2])?;
 
                 Ok(Command::HGet(key, field))
+            }
+
+            "HDEL" => {
+                if values.len() < 3 {
+                    return Err(
+                        "wrong number of arguments for 'hdel' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                let mut fields = Vec::new();
+
+                for value in &values[2..] {
+                    fields.push(value_to_string(value)?);
+                }
+
+                Ok(Command::HDel(key, fields))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -1614,6 +1633,39 @@ impl Command {
                     },
                     None => Ok(RespValue::BulkString(None)),
                 }
+            }
+
+            Command::HDel(key, fields) => {
+                remove_expired(db, &key);
+
+                let mut deleted = 0;
+                let mut should_remove_key = false;
+
+                match db.get_mut(&key) {
+                    Some(entry) => match &mut entry.value {
+                        Value::Hash(hash) => {
+                            for field in fields {
+                                if hash.remove(&field).is_some() {
+                                    deleted += 1;
+                                }
+                            }
+
+                            should_remove_key = hash.is_empty();
+                        }
+                        Value::String(_)
+                        | Value::List(_)
+                        | Value::Set(_) => {
+                            return Err("WrongType".to_string());
+                        }
+                    },
+                    None => {}
+                }
+
+                if should_remove_key {
+                    db.remove(&key);
+                }
+
+                Ok(RespValue::Integer(deleted))
             }
 
         }
