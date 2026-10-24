@@ -39,6 +39,7 @@ pub enum Command {
     HSet(String, String, String),
     HGet(String, String),
     HDel(String, Vec<String>),
+    HExists(String, String),
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -526,6 +527,19 @@ impl Command {
                 }
 
                 Ok(Command::HDel(key, fields))
+            }
+
+            "HEXISTS" => {
+                if values.len() != 3 {
+                    return Err(
+                        "wrong number of arguments for 'hexists' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+                let field = value_to_string(&values[2])?;
+
+                Ok(Command::HExists(key, field))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -1667,6 +1681,26 @@ impl Command {
 
                 Ok(RespValue::Integer(deleted))
             }
+
+
+            Command::HExists(key, field) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Hash(hash) => {
+                            Ok(RespValue::Integer(
+                                if hash.contains_key(&field) { 1 } else { 0 }
+                            ))
+                        }
+                        Value::String(_)
+                        | Value::List(_)
+                        | Value::Set(_) => Err("WrongType".to_string()),
+                    },
+                    None => Ok(RespValue::Integer(0)),
+                }
+            }
+
 
         }
     }
