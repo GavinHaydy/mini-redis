@@ -41,6 +41,8 @@ pub enum Command {
     HDel(String, Vec<String>),
     HExists(String, String),
     HGetAll(String),
+    HKeys(String),
+
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -553,6 +555,18 @@ impl Command {
                 let key = value_to_string(&values[1])?;
 
                 Ok(Command::HGetAll(key))
+            }
+
+            "HKEYS" => {
+                if values.len() != 2 {
+                    return Err(
+                        "wrong number of arguments for 'hkeys' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::HKeys(key))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -1729,6 +1743,30 @@ impl Command {
 
                                 result.push(RespValue::BulkString(
                                     Some(value.as_bytes().to_vec()),
+                                ));
+                            }
+
+                            Ok(RespValue::Array(result))
+                        }
+                        Value::String(_)
+                        | Value::List(_)
+                        | Value::Set(_) => Err("WrongType".to_string()),
+                    },
+                    None => Ok(RespValue::Array(vec![])),
+                }
+            }
+
+            Command::HKeys(key) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Hash(hash) => {
+                            let mut result = Vec::with_capacity(hash.len());
+
+                            for field in hash.keys() {
+                                result.push(RespValue::BulkString(
+                                    Some(field.as_bytes().to_vec()),
                                 ));
                             }
 
