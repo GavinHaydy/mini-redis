@@ -43,6 +43,7 @@ pub enum Command {
     HGetAll(String),
     HKeys(String),
     HVals(String),
+    HLen(String),
 
 }
 
@@ -580,6 +581,18 @@ impl Command {
                 let key = value_to_string(&values[1])?;
 
                 Ok(Command::HVals(key))
+            }
+
+            "HLEN" => {
+                if values.len() != 2 {
+                    return Err(
+                        "wrong number of arguments for 'hlen' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+
+                Ok(Command::HLen(key))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -1817,6 +1830,23 @@ impl Command {
                     None => Ok(RespValue::Array(vec![])),
                 }
             }
+
+            Command::HLen(key) => {
+                remove_expired(db, &key);
+
+                match db.get(&key) {
+                    Some(entry) => match &entry.value {
+                        Value::Hash(hash) => {
+                            Ok(RespValue::Integer(hash.len() as i64))
+                        }
+                        Value::String(_)
+                        | Value::List(_)
+                        | Value::Set(_) => Err("WrongType".to_string()),
+                    },
+                    None => Ok(RespValue::Integer(0)),
+                }
+            }
+
 
         }
     }
