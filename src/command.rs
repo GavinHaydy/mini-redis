@@ -1889,7 +1889,7 @@ impl Command {
                         }
                         Value::String(_)
                         | Value::List(_)
-                        | Value::Set(_) => Err(WRONGTYPE.to_string()),
+                        | Value::Set(_) => Err("WrongType".to_string()),
                     },
                     None => {
                         let new_value = increment;
