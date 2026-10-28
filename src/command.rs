@@ -44,6 +44,7 @@ pub enum Command {
     HKeys(String),
     HVals(String),
     HLen(String),
+    HIncrBy(String, String, i64),
 
 }
 
@@ -593,6 +594,22 @@ impl Command {
                 let key = value_to_string(&values[1])?;
 
                 Ok(Command::HLen(key))
+            }
+
+            "HINCRBY" => {
+                if values.len() != 4 {
+                    return Err(
+                        "wrong number of arguments for 'hincrby' command".to_string()
+                    );
+                }
+
+                let key = value_to_string(&values[1])?;
+                let field = value_to_string(&values[2])?;
+                let increment = value_to_string(&values[3])?
+                    .parse::<i64>()
+                    .map_err(|_| "ERR increment is not an integer".to_string())?;
+
+                Ok(Command::HIncrBy(key, field, increment))
             }
 
             _ => Err(format!("ERR unknown command '{}'", name)),
@@ -1844,6 +1861,52 @@ impl Command {
                         | Value::Set(_) => Err("WrongType".to_string()),
                     },
                     None => Ok(RespValue::Integer(0)),
+                }
+            }
+
+            Command::HIncrBy(key, field, increment) => {
+                remove_expired(db, &key);
+
+                match db.get_mut(&key) {
+                    Some(entry) => match &mut entry.value {
+                        Value::Hash(hash) => {
+                            let current = match hash.get(&field) {
+                                Some(value) => value
+                                    .parse::<i64>()
+                                    .map_err(|_| {
+                                        "ERR hash value is not an integer".to_string()
+                                    })?,
+                                None => 0,
+                            };
+
+                            let new_value = current.checked_add(increment).ok_or_else(|| {
+                                "ERR increment or decrement would overflow".to_string()
+                            })?;
+
+                            hash.insert(field, new_value.to_string());
+
+                            Ok(RespValue::Integer(new_value))
+                        }
+                        Value::String(_)
+                        | Value::List(_)
+                        | Value::Set(_) => Err(WRONGTYPE.to_string()),
+                    },
+                    None => {
+                        let new_value = increment;
+
+                        let mut hash = HashMap::new();
+                        hash.insert(field, new_value.to_string());
+
+                        db.insert(
+                            key,
+                            Entry {
+                                value: Value::Hash(hash),
+                                expires_at: None,
+                            },
+                        );
+
+                        Ok(RespValue::Integer(new_value))
+                    }
                 }
             }
 
