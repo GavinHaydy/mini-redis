@@ -85,6 +85,19 @@ fn normalize_range_index(index: i64, len: usize) -> i64 {
     }
 }
 
+fn get_hash<'a>(
+    db: &'a Db,
+    key: &str,
+) -> Result<Option<&'a HashMap<String, String>>, String> {
+    match db.get(key) {
+        None => Ok(None),
+        Some(entry) => match &entry.value {
+            Value::Hash(hash) => Ok(Some(hash)),
+            _ => Err("WrongType".to_string()),
+        },
+    }
+}
+
 impl Command {
     pub fn parse(values: Vec<RespValue>) -> Result<Self, String> {
         if values.is_empty() {
@@ -1699,21 +1712,12 @@ impl Command {
             Command::HGet(key, field) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Hash(hash) => {
-                            match hash.get(&field) {
-                                Some(value) => Ok(
-                                    RespValue::BulkString(
-                                        Some(value.as_bytes().to_vec())
-                                    )
-                                ),
-                                None => Ok(RespValue::BulkString(None)),
-                            }
-                        }
-                        Value::String(_)
-                        | Value::List(_)
-                        | Value::Set(_) => Err("WrongType".to_string()),
+                match get_hash(db, &key)? {
+                    Some(hash) => match hash.get(&field) {
+                        Some(value) => Ok(RespValue::BulkString(Some(
+                            value.as_bytes().to_vec(),
+                        ))),
+                        None => Ok(RespValue::BulkString(None)),
                     },
                     None => Ok(RespValue::BulkString(None)),
                 }
