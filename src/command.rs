@@ -1760,19 +1760,14 @@ impl Command {
             Command::HExists(key, field) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Hash(hash) => {
-                            Ok(RespValue::Integer(
-                                if hash.contains_key(&field) { 1 } else { 0 }
-                            ))
-                        }
-                        Value::String(_)
-                        | Value::List(_)
-                        | Value::Set(_) => Err("WrongType".to_string()),
-                    },
-                    None => Ok(RespValue::Integer(0)),
+                match get_hash(db, &key)? {
+                    Some(hash) => {
+                        let exists = hash.contains_key(&field);
+                        Ok(RespValue::Integer(if exists { 1 } else { 0 }))
+                    }
+                    None => Ok(RespValue::Integer(0))
                 }
+
             }
 
             Command::HGetAll(key) => {
@@ -1831,41 +1826,31 @@ impl Command {
             Command::HVals(key) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Hash(hash) => {
-                            let mut result = Vec::with_capacity(hash.len());
+                match get_hash(db, &key)? {
+                    Some(hash) => {
+                        let values = hash
+                            .values()
+                            .map(|value| {
+                                RespValue::BulkString(Some(value.as_bytes().to_vec()))
+                            })
+                            .collect();
 
-                            for value in hash.values() {
-                                result.push(RespValue::BulkString(
-                                    Some(value.as_bytes().to_vec()),
-                                ));
-                            }
+                        Ok(RespValue::Array(values))
+                    }
 
-                            Ok(RespValue::Array(result))
-                        }
-                        Value::String(_)
-                        | Value::List(_)
-                        | Value::Set(_) => Err("WrongType".to_string()),
-                    },
                     None => Ok(RespValue::Array(vec![])),
                 }
+
             }
 
             Command::HLen(key) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Hash(hash) => {
-                            Ok(RespValue::Integer(hash.len() as i64))
-                        }
-                        Value::String(_)
-                        | Value::List(_)
-                        | Value::Set(_) => Err("WrongType".to_string()),
-                    },
+                match get_hash(db, &key)? {
+                    Some(hash) => Ok(RespValue::Integer(hash.len() as i64)),
                     None => Ok(RespValue::Integer(0)),
                 }
+
             }
 
             Command::HIncrBy(key, field, increment) => {
