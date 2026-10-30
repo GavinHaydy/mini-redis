@@ -98,6 +98,19 @@ fn get_hash<'a>(
     }
 }
 
+fn get_list<'a>(
+    db: &'a Db,
+    key: &str,
+) -> Result<Option<&'a VecDeque<String>>, String> {
+    match db.get(key) {
+        None => Ok(None),
+        Some(entry) => match &entry.value {
+            Value::List(list) => Ok(Some(list)),
+            _ => Err("WrongType".to_string()),
+        },
+    }
+}
+
 impl Command {
     pub fn parse(values: Vec<RespValue>) -> Result<Self, String> {
         if values.is_empty() {
@@ -859,103 +872,71 @@ impl Command {
             Command::LRange(key, start, stop) => {
                 remove_expired(db, &key);
 
-                let Some(entry) = db.get(&key) else {
-                    return Ok(RespValue::Array(Vec::new()));
-                };
+                match get_list(db, &key)? {
+                    Some(list) => {
+                        let len = list.len() as i64;
 
-                match &entry.value {
-                    Value::List(list) => {
-                        let len = list.len();
+                        let start = if start < 0 {
+                            (len + start).max(0)
+                        } else {
+                            start
+                        };
 
-                        if len == 0 {
-                            return Ok(RespValue::Array(Vec::new()));
-                        }
+                        let stop = if stop < 0 {
+                            len + stop
+                        } else {
+                            stop
+                        };
 
-                        let mut start = normalize_range_index(start, len);
-                        let mut stop = normalize_range_index(stop, len);
+                        let values = if start >= len || start > stop || stop < 0 {
+                            vec![]
+                        } else {
+                            list.iter()
+                                .skip(start as usize)
+                                .take((stop.min(len - 1) - start + 1) as usize)
+                                .map(|value| {
+                                    RespValue::BulkString(Some(value.as_bytes().to_vec()))
+                                })
+                                .collect()
+                        };
 
-                        // 小于 0 的 start，从 0 开始
-                        if start < 0 {
-                            start = 0;
-                        }
-
-                        // 大于等于 len 的 stop，限制到最后一个元素
-                        if stop >= len as i64 {
-                            stop = len as i64 - 1;
-                        }
-
-                        // start > stop，没有结果
-                        if start > stop {
-                            return Ok(RespValue::Array(Vec::new()));
-                        }
-
-                        let result = list
-                            .iter()
-                            .skip(start as usize)
-                            .take((stop - start + 1) as usize)
-                            .map(|value| {
-                                RespValue::BulkString(
-                                    Some(value.as_bytes().to_vec())
-                                )
-                            })
-                            .collect();
-
-                        Ok(RespValue::Array(result))
+                        Ok(RespValue::Array(values))
                     }
-
-                    Value::String(_) | Value::Set(_)  | Value::Hash(_) => Err(
-                        "WrongType Operation against a key holding the wrong kind of value"
-                            .to_string()
-                    ),
+                    None => Ok(RespValue::Array(vec![])),
                 }
             }
 
             Command::LLen(key) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
+                match get_list(db, &key)? {
+                    Some(list) => Ok(RespValue::Integer(list.len() as i64)),
                     None => Ok(RespValue::Integer(0)),
-
-                    Some(entry) => match &entry.value {
-                        Value::List(list) => {
-                            Ok(RespValue::Integer(list.len() as i64))
-                        }
-
-                        Value::String(_) | Value::Set(_)  | Value::Hash(_) => {
-                            Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string()
-                            )
-                        }
-                    },
                 }
+
             }
 
             Command::LIndex(key, index) => {
                 remove_expired(db, &key);
 
-                let Some(entry) = db.get(&key) else {
-                    return Ok(RespValue::BulkString(None));
-                };
-
-
-                match &entry.value {
-                    Value::List(list) => {
-                        let Some(index) = normalize_index(index, list.len()) else {
-                            return Ok(RespValue::BulkString(None));
+                match get_list(db, &key)? {
+                    Some(list) => {
+                        let index = if index < 0 {
+                            list.len() as i64 + index
+                        } else {
+                            index
                         };
 
-                        let value = &list[index];
-
-                        Ok(RespValue::BulkString(
-                            Some(value.as_bytes().to_vec())
-                        ))
+                        match usize::try_from(index).ok().and_then(|i| list.get(i)) {
+                            Some(value) => Ok(RespValue::BulkString(Some(
+                                value.as_bytes().to_vec(),
+                            ))),
+                            None => Ok(RespValue::BulkString(None)),
+                        }
                     }
-                    Value::String(_) | Value::Set(_)  | Value::Hash(_) => Err(
-                        "WrongType Operation against a key holding the wrong kind of value".to_string()
-                    )
-
+                    None => Ok(RespValue::BulkString(None)),
                 }
+
             }
 
             Command::LSet(key, index, value) => {
