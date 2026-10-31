@@ -111,6 +111,19 @@ fn get_list<'a>(
     }
 }
 
+fn get_list_mut<'a>(
+    db: &'a mut Db,
+    key: &str,
+) -> Result<Option<&'a mut VecDeque<String>>, String> {
+    match db.get_mut(key) {
+        None => Ok(None),
+        Some(entry) => match &mut entry.value {
+            Value::List(list) => Ok(Some(list)),
+            _ => Err("WrongType".to_string()),
+        },
+    }
+}
+
 impl Command {
     pub fn parse(values: Vec<RespValue>) -> Result<Self, String> {
         if values.is_empty() {
@@ -806,34 +819,26 @@ impl Command {
             Command::LPop(key) => {
                 remove_expired(db, &key);
 
-                let result = match db.get_mut(&key) {
-                    Some(entry) => match &mut entry.value {
-                        Value::List(list) => list.pop_front(),
-                        Value::String(_) | Value::Set(_)  | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
+                let result = match get_list_mut(db, &key)? {
+                    Some(list) => list.pop_front(),
                     None => None,
                 };
 
-                let is_empty = matches!(
-                    db.get(&key),
-                    Some(Entry {
-                        value: Value::List(list),
-                        ..
-                    }) if list.is_empty()
-                );
-
-                if is_empty {
+                if db
+                    .get(&key)
+                    .is_some_and(|entry| {
+                        matches!(&entry.value, Value::List(list) if list.is_empty())
+                    })
+                {
                     db.remove(&key);
                 }
 
-                Ok(RespValue::BulkString(
-                    result.map(|value| value.into_bytes()),
-                ))
+                match result {
+                    Some(value) => Ok(RespValue::BulkString(Some(
+                        value.into_bytes(),
+                    ))),
+                    None => Ok(RespValue::BulkString(None)),
+                }
             }
 
             Command::RPop(key) => {
