@@ -844,34 +844,21 @@ impl Command {
             Command::RPop(key) => {
                 remove_expired(db, &key);
 
-                let result = match db.get_mut(&key) {
-                    Some(entry) => match &mut entry.value {
-                        Value::List(list) => list.pop_back(),
-                        Value::String(_)  | Value::Set(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
+                let result = match get_list_mut(db, &key)? {
+                    Some(list) => list.pop_back(),
                     None => None,
                 };
 
-                let is_empty = matches!(
-                    db.get(&key),
-                    Some(Entry {
-                        value: Value::List(list),
-                        ..
-                    }) if list.is_empty()
-                );
-
-                if is_empty {
+                if db.get(&key).is_some_and(|entry| {
+                    matches!(&entry.value, Value::List(list) if list.is_empty())
+                }) {
                     db.remove(&key);
                 }
 
-                Ok(RespValue::BulkString(
-                    result.map(|value| value.into_bytes()),
-                ))
+                match result {
+                    Some(value) => Ok(RespValue::BulkString(Some(value.into_bytes()))),
+                    None => Ok(RespValue::BulkString(None)),
+                }
             }
 
             Command::LRange(key, start, stop) => {
