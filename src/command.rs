@@ -124,6 +124,50 @@ fn get_list_mut<'a>(
     }
 }
 
+fn push_list(
+    db: &mut Db,
+    key: String,
+    value: String,
+    push_front: bool,
+) -> Result<usize, String> {
+    match db.get_mut(&key) {
+        Some(entry) => match &mut entry.value {
+            Value::List(list) => {
+                if push_front {
+                    list.push_front(value);
+                } else {
+                    list.push_back(value);
+                }
+
+                Ok(list.len())
+            }
+            _ => Err("WrongType".to_string()),
+        },
+        None => {
+            let mut list = VecDeque::new();
+
+            if push_front {
+                list.push_front(value);
+            } else {
+                list.push_back(value);
+            }
+
+            let len = list.len();
+
+            db.insert(
+                key,
+                Entry {
+                    value: Value::List(list),
+                    expires_at: None,
+                },
+            );
+
+            Ok(len)
+        }
+    }
+}
+
+
 impl Command {
     pub fn parse(values: Vec<RespValue>) -> Result<Self, String> {
         if values.is_empty() {
@@ -777,43 +821,17 @@ impl Command {
             Command::LPush(key, value) => {
                 remove_expired(db, &key);
 
-                let entry = db.entry(key).or_insert_with(|| Entry {
-                    value: Value::List(VecDeque::new()),
-                    expires_at: None,
-                });
+                let len = push_list(db, key, value, true)?;
 
-                match &mut entry.value {
-                    Value::List(list) => {
-                        list.push_front(value);
-
-                        Ok(RespValue::Integer(list.len() as i64))
-                    }
-                    Value::String(_)  | Value::Set(_) | Value::Hash(_) => Err(
-                        "WrongType Operation against a key holding the wrong kind of value "
-                            .to_string(),
-                    ),
-                }
+                Ok(RespValue::Integer(len as i64))
             }
 
             Command::RPush(key, value) => {
                 remove_expired(db, &key);
 
-                let entry = db.entry(key).or_insert_with(|| Entry {
-                    value: Value::List(VecDeque::new()),
-                    expires_at: None,
-                });
+                let len = push_list(db, key, value, false)?;
 
-                match &mut entry.value {
-                    Value::List(list) => {
-                        list.push_back(value);
-
-                        Ok(RespValue::Integer(list.len() as i64))
-                    }
-                    Value::String(_)  | Value::Set(_) | Value::Hash(_) => Err(
-                        "WrongType Operation against a key holding the wrong kind of value "
-                            .to_string(),
-                    ),
-                }
+                Ok(RespValue::Integer(len as i64))
             }
 
             Command::LPop(key) => {
