@@ -111,6 +111,19 @@ fn get_list<'a>(
     }
 }
 
+fn get_set<'a>(
+    db: &'a Db,
+    key: &str,
+) -> Result<Option<&'a HashSet<String>>, String> {
+    match db.get(key) {
+        None => Ok(None),
+        Some(entry) => match &entry.value {
+            Value::Set(set) => Ok(Some(set)),
+            _ => Err("WrongType".to_string()),
+        },
+    }
+}
+
 fn get_list_mut<'a>(
     db: &'a mut Db,
     key: &str,
@@ -1020,26 +1033,12 @@ impl Command {
             Command::SIsMember(key, member) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => {
-                        match &entry.value {
-                            Value::Set(set) => {
-                                if set.contains(&member) {
-                                    Ok(RespValue::Integer(1))
-                                } else {
-                                    Ok(RespValue::Integer(0))
-                                }
-                            }
+                match get_set(db, &key)? {
+                    Some(set) => {
+                        let exists = set.contains(&member);
 
-                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                                Err(
-                                    "WrongType Operation against a key holding the wrong kind of value"
-                                        .to_string(),
-                                )
-                            }
-                        }
+                        Ok(RespValue::Integer(if exists { 1 } else { 0 }))
                     }
-
                     None => Ok(RespValue::Integer(0)),
                 }
             }
@@ -1047,32 +1046,18 @@ impl Command {
             Command::SMembers(key) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => {
-                        match &entry.value {
-                            Value::Set(set) => {
-                                let members = set
-                                    .iter()
-                                    .map(|member| {
-                                        RespValue::BulkString(
-                                            Some(member.as_bytes().to_vec())
-                                        )
-                                    })
-                                    .collect();
+                match get_set(db, &key)? {
+                    Some(set) => {
+                        let values = set
+                            .iter()
+                            .map(|member| {
+                                RespValue::BulkString(Some(member.as_bytes().to_vec()))
+                            })
+                            .collect();
 
-                                Ok(RespValue::Array(members))
-                            }
-
-                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                                Err(
-                                    "WrongType Operation against a key holding the wrong kind of value"
-                                        .to_string(),
-                                )
-                            }
-                        }
+                        Ok(RespValue::Array(values))
                     }
-
-                    None => Ok(RespValue::Array(Vec::new())),
+                    None => Ok(RespValue::Array(vec![])),
                 }
             }
 
@@ -1106,22 +1091,8 @@ impl Command {
             Command::SCard(key) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => {
-                        match &entry.value {
-                            Value::Set(set) => {
-                                Ok(RespValue::Integer(set.len() as i64))
-                            }
-
-                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                                Err(
-                                    "WrongType Operation against a key holding the wrong kind of value"
-                                        .to_string(),
-                                )
-                            }
-                        }
-                    }
-
+                match get_set(db, &key)? {
+                    Some(set) => Ok(RespValue::Integer(set.len() as i64)),
                     None => Ok(RespValue::Integer(0)),
                 }
             }
