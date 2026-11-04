@@ -124,6 +124,19 @@ fn get_set<'a>(
     }
 }
 
+fn get_set_mut<'a>(
+    db: &'a mut Db,
+    key: &str,
+) -> Result<Option<&'a mut HashSet<String>>, String> {
+    match db.get_mut(key) {
+        None => Ok(None),
+        Some(entry) => match &mut entry.value {
+            Value::Set(set) => Ok(Some(set)),
+            _ => Err("WrongType".to_string()),
+        },
+    }
+}
+
 fn get_list_mut<'a>(
     db: &'a mut Db,
     key: &str,
@@ -1064,28 +1077,18 @@ impl Command {
             Command::SRem(key, member) => {
                 remove_expired(db, &key);
 
-                match db.get_mut(&key) {
-                    Some(entry) => {
-                        match &mut entry.value {
-                            Value::Set(set) => {
-                                if set.remove(&member) {
-                                    Ok(RespValue::Integer(1))
-                                } else {
-                                    Ok(RespValue::Integer(0))
-                                }
-                            }
+                let removed = match get_set_mut(db, &key)? {
+                    Some(set) => set.remove(&member),
+                    None => false,
+                };
 
-                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                                Err(
-                                    "WrongType Operation against a key holding the wrong kind of value"
-                                        .to_string(),
-                                )
-                            }
-                        }
-                    }
-
-                    None => Ok(RespValue::Integer(0)),
+                if db.get(&key).is_some_and(|entry| {
+                    matches!(&entry.value, Value::Set(set) if set.is_empty())
+                }) {
+                    db.remove(&key);
                 }
+
+                Ok(RespValue::Integer(if removed { 1 } else { 0 }))
             }
 
             Command::SCard(key) => {
@@ -1348,61 +1351,29 @@ impl Command {
             Command::SPop(key) => {
                 remove_expired(db, &key);
 
-                // 1. 检查 key 是否存在，以及类型是否正确
-                match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(_) => {}
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    None => {
-                        return Ok(RespValue::BulkString(None));
-                    }
-                }
+                let result = match get_set_mut(db, &key)? {
+                    Some(set) => {
+                        let member = set.iter().next().cloned();
 
-                // 2. 随机选取一个元素
-                let member = match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => {
-                            set.iter().choose(&mut rand::thread_rng()).cloned()
+                        if let Some(member) = &member {
+                            set.remove(member);
                         }
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => unreachable!(),
-                    },
+
+                        member
+                    }
                     None => None,
                 };
 
-                // 3. 没有元素时返回 nil
-                let Some(member) = member else {
-                    db.remove(&key);
-                    return Ok(RespValue::BulkString(None));
-                };
-
-                // 4. 删除选中的元素
-                if let Some(entry) = db.get_mut(&key) {
-                    if let Value::Set(set) = &mut entry.value {
-                        set.remove(&member);
-                    }
-                }
-
-                // 5. 如果集合已经空了，删除整个 key
-                let is_empty = match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => set.is_empty(),
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => false,
-                    },
-                    None => true,
-                };
-
-                if is_empty {
+                if db.get(&key).is_some_and(|entry| {
+                    matches!(&entry.value, Value::Set(set) if set.is_empty())
+                }) {
                     db.remove(&key);
                 }
 
-                // 6. 返回被移除的元素
-                Ok(RespValue::BulkString(Some(member.into_bytes())))
+                match result {
+                    Some(member) => Ok(RespValue::BulkString(Some(member.into_bytes()))),
+                    None => Ok(RespValue::BulkString(None)),
+                }
             }
 
             Command::SRandMember(key) => {
