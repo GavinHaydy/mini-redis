@@ -137,6 +137,34 @@ fn get_set_mut<'a>(
     }
 }
 
+fn add_set(
+    db: &mut Db,
+    key: String,
+    member: String,
+) -> Result<bool, String> {
+    match db.get_mut(&key) {
+        Some(entry) => match &mut entry.value {
+            Value::Set(set) => Ok(set.insert(member)),
+            _ => Err("WrongType".to_string()),
+        },
+        None => {
+            let mut set = HashSet::new();
+            set.insert(member);
+
+            db.insert(
+                key,
+                Entry {
+                    value: Value::Set(set),
+                    expires_at: None,
+                },
+            );
+
+            Ok(true)
+        }
+    }
+}
+
+
 fn get_list_mut<'a>(
     db: &'a mut Db,
     key: &str,
@@ -1003,44 +1031,9 @@ impl Command {
             Command::SAdd(key, member) => {
                 remove_expired(db, &key);
 
-                match db.get_mut(&key) {
-                    Some(entry) => {
-                        match &mut entry.value {
-                            Value::Set(set) => {
-                                let added = set.insert(member);
+                let added = add_set(db, key, member)?;
 
-                                if added {
-                                    Ok(RespValue::Integer(1))
-                                } else {
-                                    Ok(RespValue::Integer(0))
-                                }
-                            }
-
-                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                                Err(
-                                    "WrongType Operation against a key holding the wrong kind of value"
-                                        .to_string()
-                                )
-                            }
-                        }
-                    }
-
-                    None => {
-                        let mut set = HashSet::new();
-
-                        set.insert(member);
-
-                        db.insert(
-                            key,
-                            Entry {
-                                value: Value::Set(set),
-                                expires_at: None,
-                            },
-                        );
-
-                        Ok(RespValue::Integer(1))
-                    }
-                }
+                Ok(RespValue::Integer(if added { 1 } else { 0 }))
             }
 
             Command::SIsMember(key, member) => {
