@@ -124,6 +124,15 @@ fn get_set<'a>(
     }
 }
 
+fn get_sets<'a>(
+    db: &'a Db,
+    keys: &[String],
+) -> Result<Vec<Option<&'a HashSet<String>>>, String> {
+    keys.iter()
+    .map(|key| get_set(db, key))
+    .collect()
+}
+
 fn get_set_mut<'a>(
     db: &'a mut Db,
     key: &str,
