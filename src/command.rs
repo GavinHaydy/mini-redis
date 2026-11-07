@@ -1106,111 +1106,52 @@ impl Command {
                 remove_expired(db, &key1);
                 remove_expired(db, &key2);
 
-                let set1 = match db.get(&key1) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    None => return Ok(RespValue::Array(Vec::new())),
-                };
+                let keys = vec![key1, key2];
+                let sets = get_sets(db, &keys)?;
 
-                let set2 = match db.get(&key2) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    None => return Ok(RespValue::Array(Vec::new())),
-                };
+                let mut result = HashSet::new();
 
-                let members = set1
-                    .intersection(set2)
+                if let (Some(Some(first)), Some(Some(second))) =
+                    (sets.first(), sets.get(1))
+                {
+                    for member in first.iter() {
+                        if second.contains(member) {
+                            result.insert(member.clone());
+                        }
+                    }
+                }
+
+                let values = result
+                    .into_iter()
                     .map(|member| {
-                        RespValue::BulkString(Some(member.as_bytes().to_vec()))
+                        RespValue::BulkString(Some(member.into_bytes()))
                     })
                     .collect();
 
-                Ok(RespValue::Array(members))
+                Ok(RespValue::Array(values))
             }
 
             Command::SUnion(key1, key2) => {
                 remove_expired(db, &key1);
                 remove_expired(db, &key2);
 
-                let set1 = match db.get(&key1) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    None => {
-                        return match db.get(&key2) {
-                            Some(entry) => match &entry.value {
-                                Value::Set(set) => {
-                                    let members = set
-                                        .iter()
-                                        .map(|member| {
-                                            RespValue::BulkString(Some(
-                                                member.as_bytes().to_vec(),
-                                            ))
-                                        })
-                                        .collect();
+                let keys = vec![key1, key2];
+                let sets = get_sets(db, &keys)?;
 
-                                    Ok(RespValue::Array(members))
-                                }
-                                Value::String(_) | Value::List(_) | Value::Hash(_) => Err(
-                                    "WrongType Operation against a key holding the wrong kind of value"
-                                        .to_string(),
-                                ),
-                            },
-                            None => Ok(RespValue::Array(Vec::new())),
-                        };
-                    }
-                };
+                let mut result = HashSet::new();
 
-                let set2 = match db.get(&key2) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => set,
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    None => {
-                        let members = set1
-                            .iter()
-                            .map(|member| {
-                                RespValue::BulkString(Some(member.as_bytes().to_vec()))
-                            })
-                            .collect();
+                for set in sets.iter().flatten() {
+                    result.extend(set.iter().cloned());
+                }
 
-                        return Ok(RespValue::Array(members));
-                    }
-                };
-
-                let members = set1
-                    .union(set2)
+                let values = result
+                    .into_iter()
                     .map(|member| {
-                        RespValue::BulkString(Some(member.as_bytes().to_vec()))
+                        RespValue::BulkString(Some(member.into_bytes()))
                     })
                     .collect();
 
-                Ok(RespValue::Array(members))
+                Ok(RespValue::Array(values))
             }
 
             Command::SDiff(key1, key2) => {
