@@ -133,6 +133,17 @@ fn get_sets<'a>(
     .collect()
 }
 
+fn set_to_resp_array(set: HashSet<String>) -> RespValue {
+    let values = set
+        .into_iter()
+        .map(|member| {
+            RespValue::BulkString(Some(member.into_bytes()))
+        })
+        .collect();
+
+    RespValue::Array(values)
+}
+
 fn get_set_mut<'a>(
     db: &'a mut Db,
     key: &str,
@@ -1121,14 +1132,7 @@ impl Command {
                     }
                 }
 
-                let values = result
-                    .into_iter()
-                    .map(|member| {
-                        RespValue::BulkString(Some(member.into_bytes()))
-                    })
-                    .collect();
-
-                Ok(RespValue::Array(values))
+                Ok(set_to_resp_array(result))
             }
 
             Command::SUnion(key1, key2) => {
@@ -1144,14 +1148,7 @@ impl Command {
                     result.extend(set.iter().cloned());
                 }
 
-                let values = result
-                    .into_iter()
-                    .map(|member| {
-                        RespValue::BulkString(Some(member.into_bytes()))
-                    })
-                    .collect();
-
-                Ok(RespValue::Array(values))
+                Ok(set_to_resp_array(result))
             }
 
             Command::SDiff(key1, key2) => {
