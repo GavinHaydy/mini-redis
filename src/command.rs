@@ -133,11 +133,11 @@ fn get_sets<'a>(
     .collect()
 }
 
-fn set_to_resp_array(set: HashSet<String>) -> RespValue {
+fn set_to_resp_array(set: &HashSet<String>) -> RespValue {
     let values = set
-        .into_iter()
+        .iter()
         .map(|member| {
-            RespValue::BulkString(Some(member.into_bytes()))
+            RespValue::BulkString(Some(member.as_bytes().to_vec()))
         })
         .collect();
 
@@ -1073,17 +1073,8 @@ impl Command {
                 remove_expired(db, &key);
 
                 match get_set(db, &key)? {
-                    Some(set) => {
-                        let values = set
-                            .iter()
-                            .map(|member| {
-                                RespValue::BulkString(Some(member.as_bytes().to_vec()))
-                            })
-                            .collect();
-
-                        Ok(RespValue::Array(values))
-                    }
-                    None => Ok(RespValue::Array(vec![])),
+                    Some(set) => Ok(set_to_resp_array(set)),
+                    None => Ok(set_to_resp_array(&HashSet::new())),
                 }
             }
 
@@ -1132,7 +1123,7 @@ impl Command {
                     }
                 }
 
-                Ok(set_to_resp_array(result))
+                Ok(set_to_resp_array(&result))
             }
 
             Command::SUnion(key1, key2) => {
@@ -1148,7 +1139,7 @@ impl Command {
                     result.extend(set.iter().cloned());
                 }
 
-                Ok(set_to_resp_array(result))
+                Ok(set_to_resp_array(&result))
             }
 
             Command::SDiff(key1, key2) => {
