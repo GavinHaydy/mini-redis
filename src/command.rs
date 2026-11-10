@@ -133,6 +133,20 @@ fn get_sets<'a>(
     .collect()
 }
 
+fn remove_empty_set(db: &mut Db, key: &str) {
+    let is_empty = match db.get(key) {
+        Some(entry) => match &entry.value {
+            Value::Set(set) => set.is_empty(),
+            _ => false,
+        },
+        None => false,
+    };
+
+    if is_empty {
+        db.remove(key);
+    }
+}
+
 fn set_to_resp_array(set: &HashSet<String>) -> RespValue {
     let values = set
         .iter()
@@ -1086,11 +1100,7 @@ impl Command {
                     None => false,
                 };
 
-                if db.get(&key).is_some_and(|entry| {
-                    matches!(&entry.value, Value::Set(set) if set.is_empty())
-                }) {
-                    db.remove(&key);
-                }
+                remove_empty_set(db, &key);
 
                 Ok(RespValue::Integer(if removed { 1 } else { 0 }))
             }
@@ -1295,11 +1305,7 @@ impl Command {
                     None => None,
                 };
 
-                if db.get(&key).is_some_and(|entry| {
-                    matches!(&entry.value, Value::Set(set) if set.is_empty())
-                }) {
-                    db.remove(&key);
-                }
+                remove_empty_set(db, &key);
 
                 match result {
                     Some(member) => Ok(RespValue::BulkString(Some(member.into_bytes()))),
