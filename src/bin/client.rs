@@ -173,7 +173,8 @@ fn main() {
 
     println!("--- HSET TEST ---");
 
-    client.send(&["FLUSHDB"]);
+    client.send(&["FLUSHDB"])
+        .expect("FLUSHDB failed");
 
     println!(
         "set name: {:?}",

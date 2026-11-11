@@ -75,15 +75,6 @@ fn normalize_index(index: i64, len: usize) -> Option<usize> {
     }
 }
 
-fn normalize_range_index(index: i64, len: usize) -> i64 {
-    let len = len as i64;
-
-    if index < 0 {
-        len + index
-    } else {
-        index
-    }
-}
 
 fn get_hash<'a>(
     db: &'a Db,
