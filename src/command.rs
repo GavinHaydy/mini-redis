@@ -1149,46 +1149,19 @@ impl Command {
                 remove_expired(db, &key2);
 
                 // 2. 获取第一个集合，复制它的元素
-                let mut result = match db.get(&key1) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => set.clone(),
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    None => HashSet::new(),
-                };
+                let mut result = get_set(db, &key1)?
+                .cloned()
+                .unwrap_or_default();
 
                 // 3. 从结果中移除第二个集合包含的元素
-                match db.get(&key2) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => {
-                            for member in set {
-                                result.remove(member);
-                            }
-                        }
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                            return Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    None => {}
+                if let Some(set) = get_set(db, &key2)? {
+                    for member in set {
+                        result.remove(member);
+                    }
                 }
 
                 // 4. 将集合元素转换为 RESP 数组
-                let members = result
-                    .into_iter()
-                    .map(|member| {
-                        RespValue::BulkString(Some(member.into_bytes()))
-                    })
-                    .collect();
-
-                Ok(RespValue::Array(members))
+                Ok(set_to_resp_array(&result))
             }
 
             Command::SMove(source, destination, member) => {
