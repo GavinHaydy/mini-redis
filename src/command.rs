@@ -1170,63 +1170,29 @@ impl Command {
 
                 // 同一个 key：只检查元素是否存在，不实际移动
                 if source == destination {
-                    return match db.get(&source) {
-                        Some(entry) => match &entry.value {
-                            Value::Set(set) => {
-                                Ok(RespValue::Integer(
-                                    if set.contains(&member) { 1 } else { 0 }
-                                ))
-                            }
-                            Value::String(_) | Value::List(_) | Value::Hash(_) => Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string()
-                            ),
-                        },
-                        None => Ok(RespValue::Integer(0)),
-                    };
+                    let exists = get_set(db, &source)?
+                        .is_some_and(|set| set.contains(&member));
+
+                    return Ok(RespValue::Integer(if exists { 1 } else { 0 }));
                 }
 
                 // 1. 检查源 key 和目标 key 的类型
                 for key in [&source, &destination] {
-                    if let Some(entry) = db.get(key) {
-                        match &entry.value {
-                            Value::Set(_) => {}
-                            Value::String(_) | Value::List(_) | Value::Hash(_) => {
-                                return Err(
-                                    "WrongType Operation against a key holding the wrong kind of value"
-                                        .to_string()
-                                );
-                            }
-                        }
-                    }
+                    let _ = get_set(db, key)?;
                 }
 
                 // 2. 从源集合中删除元素
-                let removed = match db.get_mut(&source) {
-                    Some(entry) => match &mut entry.value {
-                        Value::Set(set) => set.remove(&member),
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => unreachable!(),
-                    },
+                let removed = match get_set_mut(db, &source)? {
+                    Some(set) => set.remove(&member),
                     None => false,
                 };
 
-                // 源集合没有该元素，移动失败
                 if !removed {
-                    return Ok(RespValue::Integer(0));
+                    return  Ok(RespValue::Integer(0));
                 }
 
                 // 3. 如果源集合已经空了，删除源 key
-                let source_is_empty = match db.get(&source) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => set.is_empty(),
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => false,
-                    },
-                    None => false,
-                };
-
-                if source_is_empty {
-                    db.remove(&source);
-                }
+                remove_empty_set(db, &source);
 
                 // 4. 将元素添加到目标集合
                 match db.get_mut(&destination) {
