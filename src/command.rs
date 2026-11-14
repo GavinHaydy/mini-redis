@@ -1195,26 +1195,7 @@ impl Command {
                 remove_empty_set(db, &source);
 
                 // 4. 将元素添加到目标集合
-                match db.get_mut(&destination) {
-                    Some(entry) => match &mut entry.value {
-                        Value::Set(set) => {
-                            set.insert(member);
-                        }
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => unreachable!(),
-                    },
-                    None => {
-                        let mut set = HashSet::new();
-                        set.insert(member);
-
-                        db.insert(
-                            destination,
-                            Entry {
-                                value: Value::Set(set),
-                                expires_at: None,
-                            },
-                        );
-                    }
-                }
+                add_set(db, destination, member)?;
 
                 Ok(RespValue::Integer(1))
             }
