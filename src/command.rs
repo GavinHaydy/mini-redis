@@ -1227,28 +1227,21 @@ impl Command {
             Command::SRandMember(key) => {
                 remove_expired(db, &key);
 
-                match db.get(&key) {
-                    Some(entry) => match &entry.value {
-                        Value::Set(set) => {
-                            let member = set
-                                .iter()
-                                .choose(&mut rand::thread_rng())
-                                .cloned();
+                let member = get_set(db, &key)?
+                    .and_then(|set| {
+                        set.iter()
+                        .choose(&mut rand::thread_rng())
+                        .cloned()
+                    });
 
-                            match member {
-                                Some(member) => {
-                                    Ok(RespValue::BulkString(Some(member.into_bytes())))
-                                }
-                                None => Ok(RespValue::BulkString(None)),
-                            }
-                        }
-                        Value::String(_) | Value::List(_) | Value::Hash(_) => Err(
-                            "WrongType Operation against a key holding the wrong kind of value"
-                                .to_string()
-                        ),
-                    },
+                match member {
+                    Some(member) => {
+                        Ok(RespValue::BulkString(Some(member.into_bytes())))
+                    }
                     None => Ok(RespValue::BulkString(None)),
                 }
+
+                
             }
 
             Command::SInterStore(destination, key1, key2) => {
