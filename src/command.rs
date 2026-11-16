@@ -1205,7 +1205,10 @@ impl Command {
 
                 let result = match get_set_mut(db, &key)? {
                     Some(set) => {
-                        let member = set.iter().next().cloned();
+                        let member = set
+                            .iter()
+                            .choose(&mut rand::thread_rng())
+                            .cloned();
 
                         if let Some(member) = &member {
                             set.remove(member);
