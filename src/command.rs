@@ -149,6 +149,13 @@ fn set_to_resp_array(set: &HashSet<String>) -> RespValue {
     RespValue::Array(values)
 }
 
+fn string_to_bulk_string(value: Option<String>) -> RespValue {
+    match value {
+        Some(value) => RespValue::BulkString(Some(value.into_bytes())),
+        None => RespValue::BulkString(None),
+    }
+}
+
 fn get_set_mut<'a>(
     db: &'a mut Db,
     key: &str,
@@ -1221,10 +1228,7 @@ impl Command {
 
                 remove_empty_set(db, &key);
 
-                match result {
-                    Some(member) => Ok(RespValue::BulkString(Some(member.into_bytes()))),
-                    None => Ok(RespValue::BulkString(None)),
-                }
+                Ok(string_to_bulk_string(result))
             }
 
             Command::SRandMember(key) => {
@@ -1237,12 +1241,7 @@ impl Command {
                         .cloned()
                     });
 
-                match member {
-                    Some(member) => {
-                        Ok(RespValue::BulkString(Some(member.into_bytes())))
-                    }
-                    None => Ok(RespValue::BulkString(None)),
-                }
+                Ok(string_to_bulk_string(member))
 
                 
             }
