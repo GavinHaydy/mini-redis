@@ -138,6 +138,20 @@ fn remove_empty_set(db: &mut Db, key: &str) {
     }
 }
 
+fn remove_empty_list(db: &mut Db, key: &str) {
+    let is_empty = match db.get(key) {
+        Some(entry) => match &entry.value {
+            Value::List(list) => list.is_empty(),
+            _ => false,
+        },
+        None => false,
+    };
+
+    if is_empty {
+        db.remove(key);
+    }
+}
+
 fn set_to_resp_array(set: &HashSet<String>) -> RespValue {
     let values = set
         .iter()
@@ -928,21 +942,9 @@ impl Command {
                     None => None,
                 };
 
-                if db
-                    .get(&key)
-                    .is_some_and(|entry| {
-                        matches!(&entry.value, Value::List(list) if list.is_empty())
-                    })
-                {
-                    db.remove(&key);
-                }
+                remove_empty_list(db, &key);
 
-                match result {
-                    Some(value) => Ok(RespValue::BulkString(Some(
-                        value.into_bytes(),
-                    ))),
-                    None => Ok(RespValue::BulkString(None)),
-                }
+                Ok(string_to_bulk_string(result))
             }
 
             Command::RPop(key) => {
@@ -953,16 +955,9 @@ impl Command {
                     None => None,
                 };
 
-                if db.get(&key).is_some_and(|entry| {
-                    matches!(&entry.value, Value::List(list) if list.is_empty())
-                }) {
-                    db.remove(&key);
-                }
+               remove_empty_list(db, &key);
 
-                match result {
-                    Some(value) => Ok(RespValue::BulkString(Some(value.into_bytes()))),
-                    None => Ok(RespValue::BulkString(None)),
-                }
+                Ok(string_to_bulk_string(result))
             }
 
             Command::LRange(key, start, stop) => {
