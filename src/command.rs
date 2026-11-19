@@ -13,6 +13,9 @@ pub enum Command {
     Ping,
     Info(Option<String>),
     Hello(u8),
+    ClientSetInfo(String, String),
+    ClientSetName(String),
+    ClientGetName,
     Expire(String, u64),
     Incr(String),
     Ttl(String),
@@ -50,6 +53,11 @@ pub enum Command {
     HLen(String),
     HIncrBy(String, String, i64),
 
+}
+
+#[derive(Default)]
+pub struct ClientState {
+    pub name: Option<String>,
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -347,6 +355,57 @@ impl Command {
                 }
 
                 Ok(Command::Hello(version))
+            }
+
+            "CLIENT" => {
+                if values.len() < 2 {
+                    return Err("ERR wrong number of arguments for 'client' command".to_string());
+                }
+
+                let subcommand = value_to_string(&values[1])?.to_uppercase();
+
+                match subcommand.as_str() {
+                    "SETINFO" => {
+                        if values.len() != 4 {
+                            return Err(
+                                "ERR wrong number of arguments for 'client|setinfo' command".to_string()
+                            );
+                        }
+
+                        let info_type = value_to_string(&values[2])?.to_uppercase();
+                        let info_value = value_to_string(&values[3])?;
+
+                        if info_type != "LIB-NAME" && info_type != "LIB-VER" {
+                            return Err("ERR syntax error".to_string());
+                        }
+
+                        Ok(Command::ClientSetInfo(info_type, info_value))
+                    }
+
+                    "SETNAME" => {
+                        if values.len() != 3 {
+                            return Err(
+                                "ERR wrong number of arguments for 'client|setname' command".to_string()
+                            );
+                        }
+
+                        let name = value_to_string(&values[2])?;
+
+                        Ok(Command::ClientSetName(name))
+                    }
+
+                    "GETNAME" => {
+                        if values.len() != 2 {
+                            return Err(
+                                "ERR wrong number of arguments for 'client|getname' command".to_string()
+                            );
+                        }
+
+                        Ok(Command::ClientGetName)
+                    }
+
+                    _ => Err("ERR unknown CLIENT subcommand".to_string()),
+                }
             }
 
             "GET" => {
@@ -911,7 +970,7 @@ impl Command {
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
-    pub fn execute(self, db: &mut Db) -> Result<RespValue, String> {
+    pub fn execute(self, db: &mut Db,  client: &mut ClientState) -> Result<RespValue, String> {
         match self {
             Command::Ping => Ok(RespValue::SimpleString("PONG".to_string())),
             Command::Info(section) => {
@@ -1053,6 +1112,11 @@ impl Command {
                     Ok(RespValue::Integer(if deleted { 1 } else { 0 }))
                 }
             }
+
+            Command::ClientSetInfo(_info_type, _info_value) => {
+                Ok(RespValue::SimpleString("OK".to_string()))
+            }
+
             Command::Expire(key, seconds) => Ok(match db.get_mut(&key) {
                 Some(entry) => {
                     entry.expires_at = Some(Instant::now() + Duration::from_secs(seconds));
@@ -1061,6 +1125,23 @@ impl Command {
                 }
                 None => RespValue::Integer(0),
             }),
+
+            Command::ClientSetName(name) => {
+                client.name = Some(name);
+
+                Ok(RespValue::SimpleString("OK".to_string()))
+            }
+
+            Command::ClientGetName => {
+                match &client.name {
+                    Some(name) => {
+                        Ok(RespValue::BulkString(Some(name.as_bytes().to_vec())))
+                    }
+                    None => {
+                        Ok(RespValue::BulkString(None))
+                    }
+                }
+            }
 
             Command::Incr(key) => {
                 remove_expired(db, &key);

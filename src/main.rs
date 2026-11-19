@@ -14,6 +14,7 @@ fn handle_client(
     mut stream: TcpStream,
     db: Arc<Mutex<store::Db>>,
 ) {
+    let mut client_state = command::ClientState::default();
     let mut buffer = [0; 1024];
     let mut input = Vec::new();
 
@@ -45,7 +46,7 @@ fn handle_client(
                     };
 
                     let mut db = db.lock().unwrap();
-                    let response = match command.execute(&mut db) {
+                    let response = match command.execute(&mut db, &mut client_state) {
                         Ok(response) => response,
                         Err(e) => RespValue::Error(e),
                     };
