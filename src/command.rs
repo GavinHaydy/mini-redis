@@ -152,6 +152,27 @@ fn remove_empty_list(db: &mut Db, key: &str) {
     }
 }
 
+fn pop_list(
+    db: &mut Db,
+    key: &str,
+    from_front: bool,
+) -> Result<Option<String>, String> {
+    let result = match get_list_mut(db, key)? {
+        Some(list) => {
+            if from_front {
+                list.pop_front()
+            } else {
+                list.pop_back()
+            }
+        }
+        None => None,
+    };
+
+    remove_empty_list(db, key);
+
+    Ok(result)
+}
+
 fn set_to_resp_array(set: &HashSet<String>) -> RespValue {
     let values = set
         .iter()
@@ -937,12 +958,7 @@ impl Command {
             Command::LPop(key) => {
                 remove_expired(db, &key);
 
-                let result = match get_list_mut(db, &key)? {
-                    Some(list) => list.pop_front(),
-                    None => None,
-                };
-
-                remove_empty_list(db, &key);
+                let result =pop_list(db,& key, true)?;
 
                 Ok(string_to_bulk_string(result))
             }
@@ -950,12 +966,7 @@ impl Command {
             Command::RPop(key) => {
                 remove_expired(db, &key);
 
-                let result = match get_list_mut(db, &key)? {
-                    Some(list) => list.pop_back(),
-                    None => None,
-                };
-
-               remove_empty_list(db, &key);
+                let result = pop_list(db, &key, false)?;
 
                 Ok(string_to_bulk_string(result))
             }
