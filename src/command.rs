@@ -16,6 +16,7 @@ pub enum Command {
     ClientSetInfo(String, String),
     ClientSetName(String),
     ClientGetName,
+    ClientInfo,
     Expire(String, u64),
     Incr(String),
     Ttl(String),
@@ -58,6 +59,8 @@ pub enum Command {
 #[derive(Default)]
 pub struct ClientState {
     pub name: Option<String>,
+    pub lib_name: Option<String>,
+    pub lib_ver: Option<String>,
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -402,6 +405,14 @@ impl Command {
                         }
 
                         Ok(Command::ClientGetName)
+                    }
+
+                    "INFO" => {
+                        if values.len() != 2 {
+                            return Err("ERR wrong number of arguments for 'client|info' command".to_string());
+                        }
+
+                        Ok(Command::ClientInfo)
                     }
 
                     _ => Err("ERR unknown CLIENT subcommand".to_string()),
@@ -1113,8 +1124,27 @@ impl Command {
                 }
             }
 
-            Command::ClientSetInfo(_info_type, _info_value) => {
+            Command::ClientSetInfo(key, value) => {
+                match key.as_str() {
+                    "LIB-NAME" => client.lib_name = Some(value),
+                    "LIB-VER" => client.lib_ver = Some(value),
+                    _ => return Err("ERR unknown CLIENT SETINFO option".to_string()),
+                }
+
                 Ok(RespValue::SimpleString("OK".to_string()))
+            }
+
+            Command::ClientInfo => {
+                let name = client.name.as_deref().unwrap_or("");
+                let lib_name = client.lib_name.as_deref().unwrap_or("");
+                let lib_ver = client.lib_ver.as_deref().unwrap_or("");
+
+                let info = format!(
+                    "name={} lib-name={} lib-ver={}",
+                    name, lib_name, lib_ver
+                );
+
+                Ok(RespValue::BulkString(Some(info.into_bytes())))
             }
 
             Command::Expire(key, seconds) => Ok(match db.get_mut(&key) {
