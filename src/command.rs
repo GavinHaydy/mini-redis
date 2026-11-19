@@ -7,20 +7,24 @@ use std::time::{Duration, Instant};
 pub enum Command {
     Set(String, String, Option<u64>),
     Get(String),
+    MSet(Vec<(String, String)>),
+    MGet(Vec<String>),
     Del(String),
     Ping,
+    Info(Option<String>),
+    Hello(u8),
     Expire(String, u64),
     Incr(String),
     Ttl(String),
-    LPush(String, String),
-    RPush(String, String),
+    LPush(String, Vec<String>),
+    RPush(String, Vec<String>),
     LPop(String),
     RPop(String),
     LRange(String, i64, i64),
     LLen(String),
     LIndex(String, i64),
     LSet(String, i64, String),
-    SAdd(String, String),
+    SAdd(String, Vec<String>),
     SIsMember(String, String),
     SMembers(String),
     SRem(String, String),
@@ -36,7 +40,7 @@ pub enum Command {
     SDiffStore(String, String, String),
     Keys(String),
     FlushDB,
-    HSet(String, String, String),
+    HSet(String, Vec<(String, String)>),
     HGet(String, String),
     HDel(String, Vec<String>),
     HExists(String, String),
@@ -309,6 +313,42 @@ impl Command {
                 Ok(Command::Ping)
             }
 
+            "INFO" => {
+                if values.len() > 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'info' command".to_string()
+                    );
+                }
+
+                let section = if values.len() == 2 {
+                    Some(value_to_string(&values[1])?)
+                } else {
+                    None
+                };
+
+                Ok(Command::Info(section))
+            }
+
+            "HELLO" => {
+                if values.len() != 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'hello' command".to_string()
+                    );
+                }
+
+                let version = value_to_string(&values[1])?
+                    .parse::<u8>()
+                    .map_err(|_| {
+                        "ERR Protocol version is not an integer".to_string()
+                    })?;
+
+                if version != 2 {
+                    return Err("ERR unsupported protocol version".to_string());
+                }
+
+                Ok(Command::Hello(version))
+            }
+
             "GET" => {
                 if values.len() != 2 {
                     return Err("ERR wrong number of arguments for 'get' command".to_string());
@@ -342,6 +382,40 @@ impl Command {
                     None
                 };
                 Ok(Command::Set(key, value, expires_in))
+            }
+
+            "MSET" => {
+                if values.len() < 3 || values.len() % 2 == 0 {
+                    return Err(
+                        "ERR wrong number of arguments for 'mset' command".to_string()
+                    );
+                }
+
+                let mut pairs = Vec::new();
+
+                for i in (1..values.len()).step_by(2) {
+                    let key = value_to_string(&values[i])?;
+                    let value = value_to_string(&values[i + 1])?;
+
+                    pairs.push((key, value));
+                }
+
+                Ok(Command::MSet(pairs))
+            }
+
+            "MGET" => {
+                if values.len() < 2 {
+                    return Err(
+                        "ERR wrong number of arguments for 'mget' command".to_string()
+                    );
+                }
+
+                let keys = values[1..]
+                    .iter()
+                    .map(value_to_string)
+                    .collect::<Result<Vec<String>, String>>()?;
+
+                Ok(Command::MGet(keys))
             }
 
             "DEL" => {
@@ -386,21 +460,33 @@ impl Command {
             }
 
             "LPUSH" => {
-                if values.len() != 3 {
-                    return Err("ERR wrong number of arguments for 'LPush' command".to_string());
+                if values.len() < 3 {
+                    return Err("ERR wrong number of arguments for 'lpush' command".to_string());
                 }
+
                 let key = value_to_string(&values[1])?;
-                let value = value_to_string(&values[2])?;
-                Ok(Command::LPush(key, value))
+
+                let items = values[2..]
+                    .iter()
+                    .map(value_to_string)
+                    .collect::<Result<Vec<String>, String>>()?;
+
+                Ok(Command::LPush(key, items))
             }
 
             "RPUSH" => {
-                if values.len() != 3 {
-                    return Err("ERR wrong number of arguments for 'RPush' command".to_string());
+                if values.len() < 3 {
+                    return Err("ERR wrong number of arguments for 'rpush' command".to_string());
                 }
+
                 let key = value_to_string(&values[1])?;
-                let value = value_to_string(&values[2])?;
-                Ok(Command::RPush(key, value))
+
+                let items = values[2..]
+                    .iter()
+                    .map(value_to_string)
+                    .collect::<Result<Vec<String>, String>>()?;
+
+                Ok(Command::RPush(key, items))
             }
 
             "LPOP" => {
@@ -492,17 +578,18 @@ impl Command {
             }
 
             "SADD" => {
-                if values.len() != 3 {
-                    return Err(
-                        "ERR wrong number of arguments for 'sadd' command".to_string()
-                    );
+                if values.len() < 3 {
+                    return Err("ERR wrong number of arguments for 'sadd' command".to_string());
                 }
 
                 let key = value_to_string(&values[1])?;
 
-                let member = value_to_string(&values[2])?;
+                let members = values[2..]
+                    .iter()
+                    .map(value_to_string)
+                    .collect::<Result<Vec<String>, String>>()?;
 
-                Ok(Command::SAdd(key, member))
+                Ok(Command::SAdd(key, members))
             }
 
             "SISMEMBER" => {
@@ -695,17 +782,22 @@ impl Command {
             }
 
             "HSET" => {
-                if values.len() != 4 {
-                    return Err(
-                        "wrong number of arguments for 'hset' command".to_string()
-                    );
+                if values.len() < 4 || values.len() % 2 != 0 {
+                    return Err("ERR wrong number of arguments for 'hset' command".to_string());
                 }
 
                 let key = value_to_string(&values[1])?;
-                let field = value_to_string(&values[2])?;
-                let value = value_to_string(&values[3])?;
 
-                Ok(Command::HSet(key, field, value))
+                let mut fields = Vec::new();
+
+                for i in (2..values.len()).step_by(2) {
+                    let field = value_to_string(&values[i])?;
+                    let value = value_to_string(&values[i + 1])?;
+
+                    fields.push((field, value));
+                }
+
+                Ok(Command::HSet(key, fields))
             }
 
             "HGET" => {
@@ -822,6 +914,60 @@ impl Command {
     pub fn execute(self, db: &mut Db) -> Result<RespValue, String> {
         match self {
             Command::Ping => Ok(RespValue::SimpleString("PONG".to_string())),
+            Command::Info(section) => {
+                let info = match section.as_deref() {
+                    None | Some("default") | Some("all") => {
+                        "# Server\r\n\
+            redis_version:0.1.0\r\n\
+            redis_mode:standalone\r\n\
+            \r\n\
+            # Clients\r\n\
+            connected_clients:1\r\n"
+                    }
+
+                    Some("server") => {
+                        "# Server\r\n\
+            redis_version:0.1.0\r\n\
+            redis_mode:standalone\r\n"
+                    }
+
+                    Some("clients") => {
+                        "# Clients\r\n\
+            connected_clients:1\r\n"
+                    }
+
+                    Some(_) => "",
+                };
+
+                Ok(RespValue::BulkString(Some(info.as_bytes().to_vec())))
+            }
+
+            Command::Hello(version) => {
+                if version != 2 {
+                    return Err("ERR unsupported protocol version".to_string());
+                }
+
+                Ok(RespValue::Array(vec![
+                    RespValue::BulkString(Some(b"server".to_vec())),
+                    RespValue::BulkString(Some(b"mini-redis".to_vec())),
+
+                    RespValue::BulkString(Some(b"version".to_vec())),
+                    RespValue::BulkString(Some(b"0.1.0".to_vec())),
+
+                    RespValue::BulkString(Some(b"proto".to_vec())),
+                    RespValue::Integer(2),
+
+                    RespValue::BulkString(Some(b"mode".to_vec())),
+                    RespValue::BulkString(Some(b"standalone".to_vec())),
+
+                    RespValue::BulkString(Some(b"role".to_vec())),
+                    RespValue::BulkString(Some(b"master".to_vec())),
+
+                    RespValue::BulkString(Some(b"modules".to_vec())),
+                    RespValue::Array(vec![]),
+                ]))
+            }
+            
             Command::Set(key, value, expires_in) => {
                 let expires_at =
                     expires_in.map(|seconds| Instant::now() + Duration::from_secs(seconds));
@@ -850,6 +996,46 @@ impl Command {
                     None => Ok(RespValue::BulkString(None)),
                 }
             }
+
+
+            Command::MSet(pairs) => {
+                for (key, value) in pairs {
+                    db.insert(
+                        key,
+                        Entry {
+                            value: Value::String(value),
+                            expires_at: None,
+                        },
+                    );
+                }
+
+                Ok(RespValue::SimpleString("OK".to_string()))
+            }
+
+            Command::MGet(keys) => {
+                let mut values = Vec::new();
+
+                for key in keys {
+                    remove_expired(db, &key);
+
+                    let value = match db.get(&key) {
+                        Some(entry) => match &entry.value {
+                            Value::String(value) => {
+                                RespValue::BulkString(Some(value.as_bytes().to_vec()))
+                            }
+                            Value::List(_) | Value::Set(_) | Value::Hash(_) => {
+                                RespValue::BulkString(None)
+                            }
+                        },
+                        None => RespValue::BulkString(None),
+                    };
+
+                    values.push(value);
+                }
+
+                Ok(RespValue::Array(values))
+            }
+
             Command::Del(key) => {
                 let expired = match db.get(&key) {
                     Some(entry) => match entry.expires_at {
@@ -939,18 +1125,26 @@ impl Command {
                 }
             }
 
-            Command::LPush(key, value) => {
+            Command::LPush(key, values) => {
                 remove_expired(db, &key);
 
-                let len = push_list(db, key, value, true)?;
+                let mut len = 0;
+
+                for value in values {
+                    len = push_list(db, key.clone(), value, true)?;
+                }
 
                 Ok(RespValue::Integer(len as i64))
             }
 
-            Command::RPush(key, value) => {
+            Command::RPush(key, values) => {
                 remove_expired(db, &key);
 
-                let len = push_list(db, key, value, false)?;
+                let mut len = 0;
+
+                for value in values {
+                    len = push_list(db, key.clone(), value, false)?;
+                }
 
                 Ok(RespValue::Integer(len as i64))
             }
@@ -1066,14 +1260,19 @@ impl Command {
 
             }
 
-            Command::SAdd(key, member) => {
+            Command::SAdd(key, members) => {
                 remove_expired(db, &key);
 
-                let added = add_set(db, key, member)?;
+                let mut added_count = 0;
 
-                Ok(RespValue::Integer(if added { 1 } else { 0 }))
+                for member in members {
+                    if add_set(db, key.clone(), member)? {
+                        added_count += 1;
+                    }
+                }
+
+                Ok(RespValue::Integer(added_count))
             }
-
             Command::SIsMember(key, member) => {
                 remove_expired(db, &key);
 
@@ -1455,28 +1654,36 @@ impl Command {
                 Ok(RespValue::SimpleString("OK".to_string()))
             }
 
-            Command::HSet(key, field, value) => {
+            Command::HSet(key, fields) => {
                 remove_expired(db, &key);
+
+                let mut added_count = 0;
 
                 match db.get_mut(&key) {
                     Some(entry) => match &mut entry.value {
                         Value::Hash(hash) => {
-                            let is_new = !hash.contains_key(&field);
+                            for (field, value) in fields {
+                                if !hash.contains_key(&field) {
+                                    added_count += 1;
+                                }
 
-                            hash.insert(field, value);
-
-                            Ok(RespValue::Integer(if is_new { 1 } else { 0 }))
+                                hash.insert(field, value);
+                            }
                         }
                         Value::String(_) | Value::List(_) | Value::Set(_) => {
-                            Err(
-                                "WrongType Operation against a key holding the wrong kind of value"
-                                    .to_string()
-                            )
+                            return Err(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value"
+                                .to_string(),
+                            );
                         }
                     },
                     None => {
                         let mut hash = HashMap::new();
-                        hash.insert(field, value);
+
+                        for (field, value) in fields {
+                            hash.insert(field, value);
+                            added_count += 1;
+                        }
 
                         db.insert(
                             key,
@@ -1485,10 +1692,10 @@ impl Command {
                                 expires_at: None,
                             },
                         );
-
-                        Ok(RespValue::Integer(1))
                     }
                 }
+
+                Ok(RespValue::Integer(added_count))
             }
 
             Command::HGet(key, field) => {
