@@ -2,6 +2,7 @@ use crate::resp::RespValue;
 use crate::store::{Db, Entry, Value, remove_expired, cleanup_expired};
 use rand::seq::IteratorRandom;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 pub enum Command {
@@ -17,6 +18,7 @@ pub enum Command {
     ClientSetName(String),
     ClientGetName,
     ClientInfo,
+    ClientId,
     Expire(String, u64),
     Incr(String),
     Ttl(String),
@@ -58,9 +60,23 @@ pub enum Command {
 
 #[derive(Default)]
 pub struct ClientState {
+    pub id: u64,
     pub name: Option<String>,
     pub lib_name: Option<String>,
     pub lib_ver: Option<String>,
+}
+
+impl ClientState {
+    pub fn new() -> Self {
+        static NEXT_CLIENT_ID: AtomicU64 = AtomicU64::new(1);
+
+        Self {
+            id: NEXT_CLIENT_ID.fetch_add(1, Ordering::Relaxed),
+            name: None,
+            lib_name: None,
+            lib_ver: None,
+        }
+    }
 }
 
 fn key_matches(key: &str, pattern: &str) -> bool {
@@ -413,6 +429,14 @@ impl Command {
                         }
 
                         Ok(Command::ClientInfo)
+                    }
+
+                    "ID" => {
+                        if values.len() != 2 {
+                            return Err("ERR wrong number of arguments for 'client|id' command".to_string());
+                        }
+
+                        Ok(Command::ClientId)
                     }
 
                     _ => Err("ERR unknown CLIENT subcommand".to_string()),
@@ -1145,6 +1169,10 @@ impl Command {
                 );
 
                 Ok(RespValue::BulkString(Some(info.into_bytes())))
+            }
+
+            Command::ClientId => {
+                Ok(RespValue::Integer(client.id as i64))
             }
 
             Command::Expire(key, seconds) => Ok(match db.get_mut(&key) {

@@ -14,7 +14,7 @@ fn handle_client(
     mut stream: TcpStream,
     db: Arc<Mutex<store::Db>>,
 ) {
-    let mut client_state = command::ClientState::default();
+    let mut client_state = command::ClientState::new();
     let mut buffer = [0; 1024];
     let mut input = Vec::new();
 
