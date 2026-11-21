@@ -58,7 +58,7 @@ pub enum Command {
 
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct ClientState {
     pub id: u64,
     pub name: Option<String>,
