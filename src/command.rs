@@ -19,6 +19,7 @@ pub enum Command {
     ClientGetName,
     ClientInfo,
     ClientId,
+    ClientList,
     Expire(String, u64),
     Incr(String),
     Ttl(String),
@@ -437,6 +438,16 @@ impl Command {
                         }
 
                         Ok(Command::ClientId)
+                    }
+
+                    "LIST" => {
+                        if values.len() != 2 {
+                            return Err(
+                                "ERR wrong number of arguments for 'client|list' command".to_string()
+                            );
+                        }
+
+                        Ok(Command::ClientList)
                     }
 
                     _ => Err("ERR unknown CLIENT subcommand".to_string()),
@@ -1005,7 +1016,7 @@ impl Command {
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
-    pub fn execute(self, db: &mut Db,  client: &mut ClientState) -> Result<RespValue, String> {
+    pub fn execute(self, db: &mut Db,  client: &mut ClientState, clients: &HashMap<u64, ClientState>) -> Result<RespValue, String> {
         match self {
             Command::Ping => Ok(RespValue::SimpleString("PONG".to_string())),
             Command::Info(section) => {
@@ -1173,6 +1184,24 @@ impl Command {
 
             Command::ClientId => {
                 Ok(RespValue::Integer(client.id as i64))
+            }
+
+            Command::ClientList => {
+                let result = clients
+                    .values()
+                    .map(|client| {
+                        format!(
+                            "id={} name={} lib-name={} lib-ver={}",
+                            client.id,
+                            client.name.as_deref().unwrap_or(""),
+                            client.lib_name.as_deref().unwrap_or(""),
+                            client.lib_ver.as_deref().unwrap_or("")
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+
+                Ok(RespValue::BulkString(Some(result.into_bytes())))
             }
 
             Command::Expire(key, seconds) => Ok(match db.get_mut(&key) {

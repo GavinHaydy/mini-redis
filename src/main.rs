@@ -57,8 +57,13 @@ fn handle_client(
                         }
                     };
 
+                    let clients_snapshot = {
+                        let clients = clients.lock().unwrap();
+                        clients.clone()
+                    };
+
                     let mut db = db.lock().unwrap();
-                    let response = match command.execute(&mut db, &mut client_state) {
+                    let response = match command.execute(&mut db, &mut client_state, &clients_snapshot) {
                         Ok(response) => response,
                         Err(e) => RespValue::Error(e),
                     };
