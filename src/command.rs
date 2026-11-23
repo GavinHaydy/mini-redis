@@ -62,6 +62,8 @@ pub enum Command {
 #[derive(Clone)]
 pub struct ClientState {
     pub id: u64,
+    pub addr: Option<String>,
+    pub laddr: Option<String>,
     pub name: Option<String>,
     pub lib_name: Option<String>,
     pub lib_ver: Option<String>,
@@ -74,6 +76,8 @@ impl ClientState {
         Self {
             id: NEXT_CLIENT_ID.fetch_add(1, Ordering::Relaxed),
             name: None,
+            addr: None,
+            laddr: None,
             lib_name: None,
             lib_ver: None,
         }
@@ -1191,8 +1195,10 @@ impl Command {
                     .values()
                     .map(|client| {
                         format!(
-                            "id={} name={} lib-name={} lib-ver={}",
+                            "id={} addr={}  laddr={} name={} lib-name={} lib-ver={}",
                             client.id,
+                            client.addr.as_deref().unwrap_or(""),
+                            client.laddr.as_deref().unwrap_or(""),
                             client.name.as_deref().unwrap_or(""),
                             client.lib_name.as_deref().unwrap_or(""),
                             client.lib_ver.as_deref().unwrap_or("")

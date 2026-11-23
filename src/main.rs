@@ -20,6 +20,10 @@ fn handle_client(
 ) {
     let mut client_state = command::ClientState::new();
 
+    client_state.addr  =  stream.peer_addr().ok().map(|addr| addr.to_string());
+    client_state.laddr = stream.local_addr().ok().map(|addr| addr.to_string());
+
+
     let client_id = client_state.id;
 
     {
