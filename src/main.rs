@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::{sleep, spawn};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use crate::resp::RespValue;
 use crate::store::cleanup_expired;
 
@@ -50,6 +50,8 @@ fn handle_client(
             match resp::parse_array(&input) {
                 Ok(Some((command, consumed))) => {
                     input.drain(..consumed);
+
+                    client_state.last_active_at = Instant::now();
 
                     let command = match command::Command::parse(command) {
                         Ok(command) => command,

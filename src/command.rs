@@ -67,11 +67,15 @@ pub struct ClientState {
     pub name: Option<String>,
     pub lib_name: Option<String>,
     pub lib_ver: Option<String>,
+    pub connected_at: Instant,
+    pub last_active_at: Instant,
 }
 
 impl ClientState {
     pub fn new() -> Self {
         static NEXT_CLIENT_ID: AtomicU64 = AtomicU64::new(1);
+
+        let now = Instant::now();
 
         Self {
             id: NEXT_CLIENT_ID.fetch_add(1, Ordering::Relaxed),
@@ -80,6 +84,8 @@ impl ClientState {
             laddr: None,
             lib_name: None,
             lib_ver: None,
+            connected_at: now,
+            last_active_at: now
         }
     }
 }
@@ -1194,11 +1200,17 @@ impl Command {
                 let result = clients
                     .values()
                     .map(|client| {
+
+                        let age = client.connected_at.elapsed().as_secs();
+                        let idle = client.last_active_at.elapsed().as_secs();
+
                         format!(
-                            "id={} addr={}  laddr={} name={} lib-name={} lib-ver={}",
+                            "id={} addr={}  laddr={} age={} idle={} name={} lib-name={} lib-ver={}",
                             client.id,
                             client.addr.as_deref().unwrap_or(""),
                             client.laddr.as_deref().unwrap_or(""),
+                            age,
+                            idle,
                             client.name.as_deref().unwrap_or(""),
                             client.lib_name.as_deref().unwrap_or(""),
                             client.lib_ver.as_deref().unwrap_or("")
