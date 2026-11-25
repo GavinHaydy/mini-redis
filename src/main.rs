@@ -91,6 +91,10 @@ fn handle_client(
                         }
                     };
 
+                    {
+                        let mut clients = clients.lock().unwrap();
+                        clients.insert(client_id, client_state.clone());
+                    }
                     let clients_snapshot = {
                         let clients = clients.lock().unwrap();
                         clients.clone()
