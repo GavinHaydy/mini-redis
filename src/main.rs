@@ -95,13 +95,30 @@ fn handle_client(
                         let mut clients = clients.lock().unwrap();
                         clients.insert(client_id, client_state.clone());
                     }
-                    let clients_snapshot = {
+                    let need_clients = matches!(
+                        &command,
+                        command::Command::ClientList
+                    );
+
+                    let clients_snapshot = if need_clients {
+                        {
+                            let mut clients = clients.lock().unwrap();
+                            clients.insert(client_id, client_state.clone());
+                        }
+
                         let clients = clients.lock().unwrap();
-                        clients.clone()
+                        Some(clients.clone())
+                    } else {
+                        None
                     };
 
                     let mut db = db.lock().unwrap();
-                    let response = match command.execute(&mut db, &mut client_state, &clients_snapshot) {
+
+                    let response = match command.execute(
+                        &mut db,
+                        &mut client_state,
+                        clients_snapshot.as_ref(),
+                    ) {
                         Ok(response) => response,
                         Err(e) => RespValue::Error(e),
                     };

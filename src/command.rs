@@ -1026,7 +1026,7 @@ impl Command {
             _ => Err(format!("ERR unknown command '{}'", name)),
         }
     }
-    pub fn execute(self, db: &mut Db,  client: &mut ClientState, clients: &HashMap<u64, ClientState>) -> Result<RespValue, String> {
+    pub fn execute(self, db: &mut Db,  client: &mut ClientState, clients: Option<&HashMap<u64, ClientState>>) -> Result<RespValue, String> {
         match self {
             Command::Ping => Ok(RespValue::SimpleString("PONG".to_string())),
             Command::Info(section) => {
@@ -1197,6 +1197,9 @@ impl Command {
             }
 
             Command::ClientList => {
+                let clients = clients.ok_or_else(|| {
+                    "CLIENT LIST requires client registry".to_string()
+                })?;
                 let result = clients
                     .values()
                     .map(|client| {
