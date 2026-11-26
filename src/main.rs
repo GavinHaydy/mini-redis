@@ -3,13 +3,12 @@ mod resp;
 mod command;
 mod client_registry;
 
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
-use crate::client_registry::{ClientCleanup,ClientRegistry, get_client_snapshot, update_client_registry};
+use crate::client_registry::{ClientCleanup, ClientManager};
 use crate::resp::RespValue;
 use crate::store::cleanup_expired;
 
@@ -17,7 +16,7 @@ use crate::store::cleanup_expired;
 fn handle_client(
     mut stream: TcpStream,
     db: Arc<Mutex<store::Db>>,
-    clients: ClientRegistry,
+    clients: ClientManager,
 ) {
     let mut client_state = command::ClientState::new();
 
@@ -27,11 +26,11 @@ fn handle_client(
 
     let client_id = client_state.id;
 
-    update_client_registry(&clients, &client_state);
+    clients.register(client_state.clone());
 
     let _cleanup = ClientCleanup::new(
         client_id,
-        Arc::clone(&clients)
+        clients.clone(),
         );
     
     let mut buffer = [0; 1024];
@@ -66,7 +65,7 @@ fn handle_client(
                         }
                     };
 
-                    update_client_registry(&clients, &client_state);
+                    clients.register(client_state.clone());
                     
                     let need_clients = matches!(
                         &command,
@@ -74,9 +73,9 @@ fn handle_client(
                     );
 
                     let clients_snapshot = if need_clients {
-                        update_client_registry(&clients, &client_state);
+                        clients.update( &client_state);
 
-                        Some(get_client_snapshot(&clients))
+                        Some(clients.snapshot())
                     } else {
                         None
                     };
@@ -93,8 +92,7 @@ fn handle_client(
                     };
 
                     {
-                        let mut clients = clients.lock().unwrap();
-                        clients.insert(client_id, client_state.clone());
+                        clients.update(&client_state);
                     }
 
                     let output = resp::encode(&response);
@@ -129,7 +127,7 @@ fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
     let db = Arc::new(Mutex::new(store::Db::new()));
-    let clients: ClientRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let clients = ClientManager::new();
 
     // clean expired keys
     let cleanup_db = Arc::clone(&db);
@@ -161,7 +159,7 @@ fn main() {
                 println!("Client connected: {:?}", stream.peer_addr());
 
                 let db = Arc::clone(&db);
-                let clients = Arc::clone(&clients);
+                let clients =clients.clone();
 
                 spawn(move || {
                     handle_client(stream, db, clients);
