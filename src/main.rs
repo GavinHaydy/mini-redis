@@ -13,6 +13,21 @@ use crate::store::cleanup_expired;
 
 type ClientRegistry = Arc<Mutex<HashMap<u64, command::ClientState>>>;
 
+fn update_client_registry(
+    clients: &ClientRegistry,
+    client_state: &command::ClientState,
+) {
+    let mut clients = clients.lock().unwrap();
+    clients.insert(client_state.id, client_state.clone());
+}
+
+fn get_client_snapshot(
+    clients: &ClientRegistry,
+) -> HashMap<u64, command::ClientState> {
+    let clients = clients.lock().unwrap();
+    clients.clone()
+}
+
 struct  ClientCleanup {
     client_id: u64,
     clients: ClientRegistry
@@ -49,10 +64,7 @@ fn handle_client(
 
     let client_id = client_state.id;
 
-    {
-        let mut clients = clients.lock().unwrap();
-        clients.insert(client_id, client_state.clone());
-    }
+    update_client_registry(&clients, &client_state);
 
     let _cleanup = ClientCleanup{
         client_id,
@@ -91,23 +103,17 @@ fn handle_client(
                         }
                     };
 
-                    {
-                        let mut clients = clients.lock().unwrap();
-                        clients.insert(client_id, client_state.clone());
-                    }
+                    update_client_registry(&clients, &client_state);
+                    
                     let need_clients = matches!(
                         &command,
                         command::Command::ClientList
                     );
 
                     let clients_snapshot = if need_clients {
-                        {
-                            let mut clients = clients.lock().unwrap();
-                            clients.insert(client_id, client_state.clone());
-                        }
+                        update_client_registry(&clients, &client_state);
 
-                        let clients = clients.lock().unwrap();
-                        Some(clients.clone())
+                        Some(get_client_snapshot(&clients))
                     } else {
                         None
                     };
