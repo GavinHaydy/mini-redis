@@ -38,6 +38,25 @@ fn read_from_client(
     Ok(n)
 }
 
+fn parse_client_command(
+    input: &mut Vec<u8>,
+) -> Result<Option<Vec<RespValue>>, String> {
+    match resp::parse_array(input) {
+        Ok(Some((command, consumed))) => {
+            input.drain(..consumed);
+            Ok(Some(command))
+        }
+        Ok(None) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+fn parse_redis_command(
+    values: Vec<RespValue>,
+) -> Result<command::Command, String> {
+    command::Command::parse(values)
+}
+
 fn handle_client(
     mut stream: TcpStream,
     db: Arc<Mutex<store::Db>>,
@@ -62,13 +81,13 @@ fn handle_client(
     let mut input = Vec::new();
 
     loop {
-        let n = match read_from_client(
+        match read_from_client(
             &mut stream,
             &mut buffer,
             &mut input
         ) {
             Ok(0) => break,
-            Ok(n) => n,
+            Ok(_) => {},
             Err(e) => {
                 println!("read error: {}", e);
                 break;
@@ -76,13 +95,11 @@ fn handle_client(
         };
 
         loop {
-            match resp::parse_array(&input) {
-                Ok(Some((command, consumed))) => {
-                    input.drain(..consumed);
-
+            match parse_client_command(&mut input) {
+                Ok(Some(command)) => {
                     client_state.last_active_at = Instant::now();
 
-                    let command = match command::Command::parse(command) {
+                    let command = match parse_redis_command(command) {
                         Ok(command) => command,
                         Err(error) => {
                             let response = RespValue::Error(error);
@@ -92,7 +109,7 @@ fn handle_client(
                     };
 
                     clients.register(client_state.clone());
-                    
+
                     let need_clients = matches!(
                         &command,
                         command::Command::ClientList
@@ -130,8 +147,7 @@ fn handle_client(
                 Ok(None) => break,
 
                 Err(e) => {
-                    let response =
-                        RespValue::Error(e);
+                    let response = RespValue::Error(e);
 
                     let _ = write_response(&mut stream, &response);
 

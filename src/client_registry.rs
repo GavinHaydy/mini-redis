@@ -38,20 +38,6 @@ impl ClientManager {
     }
 }
 
-// pub fn update_client_registry(
-//     clients: &ClientRegistry,
-//     client_state: &ClientState,
-// ) {
-//     let mut clients = clients.lock().unwrap();
-//     clients.insert(client_state.id, client_state.clone());
-// }
-//
-// pub fn get_client_snapshot(
-//     clients: &ClientRegistry,
-// ) -> HashMap<u64, ClientState> {
-//     let clients = clients.lock().unwrap();
-//     clients.clone()
-// }
 
 pub struct ClientCleanup {
     client_id: u64,
