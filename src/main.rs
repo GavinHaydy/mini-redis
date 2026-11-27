@@ -13,6 +13,31 @@ use crate::resp::RespValue;
 use crate::store::cleanup_expired;
 
 
+fn write_response(
+    stream: &mut TcpStream,
+    response: &RespValue,
+) -> Result<(), String> {
+    let output = resp::encode(response);
+
+    stream
+    .write_all(&output)
+    .map_err(|e| format!("write error: {}", e))
+}
+
+fn read_from_client(
+    stream: &mut TcpStream,
+    buffer: &mut [u8],
+    input: &mut Vec<u8>,
+) -> std::io::Result<usize> {
+    let n = stream.read(buffer)?;
+
+    if n > 0 {
+        input.extend_from_slice(&buffer[..n]);
+    }
+
+    Ok(n)
+}
+
 fn handle_client(
     mut stream: TcpStream,
     db: Arc<Mutex<store::Db>>,
@@ -37,7 +62,11 @@ fn handle_client(
     let mut input = Vec::new();
 
     loop {
-        let n = match stream.read(&mut buffer) {
+        let n = match read_from_client(
+            &mut stream,
+            &mut buffer,
+            &mut input
+        ) {
             Ok(0) => break,
             Ok(n) => n,
             Err(e) => {
@@ -45,8 +74,6 @@ fn handle_client(
                 break;
             }
         };
-
-        input.extend_from_slice(&buffer[..n]);
 
         loop {
             match resp::parse_array(&input) {
@@ -59,8 +86,7 @@ fn handle_client(
                         Ok(command) => command,
                         Err(error) => {
                             let response = RespValue::Error(error);
-                            let output = resp::encode(&response);
-                            let _ = stream.write_all(&output);
+                            let _ = write_response(&mut stream, &response);
                             continue;
                         }
                     };
@@ -95,10 +121,8 @@ fn handle_client(
                         clients.update(&client_state);
                     }
 
-                    let output = resp::encode(&response);
-
-                    if let Err(e) = stream.write_all(&output) {
-                        println!("write error: {}", e);
+                    if let Err(e) = write_response(&mut stream, &response) {
+                        println!("{}", e);
                         return;
                     }
                 }
@@ -109,9 +133,7 @@ fn handle_client(
                     let response =
                         RespValue::Error(e);
 
-                    let output = resp::encode(&response);
-
-                    let _ = stream.write_all(&output);
+                    let _ = write_response(&mut stream, &response);
 
                     return;
                 }
