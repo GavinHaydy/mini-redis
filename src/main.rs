@@ -57,6 +57,40 @@ fn parse_redis_command(
     command::Command::parse(values)
 }
 
+fn execute_command(
+    command: command::Command,
+    db: &Arc<Mutex<store::Db>>,
+    client_state: &mut command::ClientState,
+    clients: &ClientManager,
+) -> RespValue {
+    let need_clients = matches!(
+        &command,
+        command::Command::ClientList
+    );
+
+    let clients_snapshot = if need_clients {
+        clients.update(client_state);
+        Some(clients.snapshot())
+    } else {
+        None
+    };
+
+    let mut db = db.lock().unwrap();
+
+    let response = match command.execute(
+        &mut db,
+        client_state,
+        clients_snapshot.as_ref(),
+    ) {
+        Ok(response) => response,
+        Err(e) => RespValue::Error(e),
+    };
+
+    clients.update(client_state);
+
+    response
+}
+
 fn handle_client(
     mut stream: TcpStream,
     db: Arc<Mutex<store::Db>>,
@@ -110,33 +144,12 @@ fn handle_client(
 
                     clients.register(client_state.clone());
 
-                    let need_clients = matches!(
-                        &command,
-                        command::Command::ClientList
-                    );
-
-                    let clients_snapshot = if need_clients {
-                        clients.update( &client_state);
-
-                        Some(clients.snapshot())
-                    } else {
-                        None
-                    };
-
-                    let mut db = db.lock().unwrap();
-
-                    let response = match command.execute(
-                        &mut db,
+                    let response = execute_command(
+                        command,
+                        &db,
                         &mut client_state,
-                        clients_snapshot.as_ref(),
-                    ) {
-                        Ok(response) => response,
-                        Err(e) => RespValue::Error(e),
-                    };
-
-                    {
-                        clients.update(&client_state);
-                    }
+                        &clients,
+                    );
 
                     if let Err(e) = write_response(&mut stream, &response) {
                         println!("{}", e);
